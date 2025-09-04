@@ -1,0 +1,21 @@
+---
+alwaysApply: false
+---
+
+# 백엔드 개발 컨벤션 (v: context7)
+
+## 1. 패키지 및 아키텍처
+
+- **반드시 [.docs/backend.md](mdc:.docs/backend.md)에 정의된 패키지 구조를 따라야 합니다.**
+  - **Core Logic**: `egovframework.com.cmm` 등 공통 기능 패키지
+  - **Domain Logic**: `cms.*` 패키지 하위에 기능별로 분류하여 작성합니다. (예: `cms.chat`)
+
+## 2. API 기능 구현
+
+- **기존 컨벤션을 절대 헤치지 않습니다.** 새로운 API를 구현할 때는 기존 `Board` 기능의 Controller, Service 로직을 참고하여 코드 스타일과 구조를 동일하게 유지해야 합니다.
+- **Exception Handling**: 새로운 Exception을 정의하기보다, `egovframework.rte.fdl.cmmn.exception.EgovBizException` 등 기존에 정의된 공통 예외를 우선적으로 사용합니다.
+
+## 3. 핵심 기능 재사용
+
+- **파일 처리**: 파일 업로드/다운로드가 필요할 경우, `EgovFileMngService`를 반드시 재사용해야 합니다. 절대로 새로운 파일 처리 로직을 만들지 마십시오.
+- **JPA Auditing**: 새로운 엔티티(@Entity)를 생성할 경우, `created_by`, `created_at` 등의 감사 필드를 포함하는 공통 `BaseEntity` (또는 유사한 역할을 하는 최상위 클래스)를 상속받아야 합니다. 이는 [.docs/database.md](mdc:.docs/database.md)의 설계와 일치합니다.

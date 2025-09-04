@@ -14,4 +14,4 @@ public interface FeatureService {
     Page<Feature> getFeaturesByType(String type, Pageable pageable);
     void activateFeature(Long id);
     void deactivateFeature(Long id);
-} 
+}
