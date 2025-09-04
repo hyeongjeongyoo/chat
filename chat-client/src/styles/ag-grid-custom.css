@@ -1,0 +1,119 @@
+/* AG Grid 커스텀 스타일 */
+
+/* 전체 그리드 스타일 */
+.ag-theme-quartz {
+  --ag-header-height: 50px;
+  --ag-row-height: 60px;
+  --ag-header-foreground-color: #333;
+  --ag-foreground-color: #333;
+  --ag-background-color: #fff;
+  --ag-odd-row-background-color: #f9f9f9;
+  --ag-header-background-color: #f0f0f0;
+  --ag-selected-row-background-color: rgba(42, 127, 193, 0.1);
+  --ag-row-hover-color: rgba(42, 127, 193, 0.05);
+  --ag-column-hover-color: rgba(42, 127, 193, 0.1);
+  --ag-input-focus-border-color: #2a7fc1;
+  --ag-range-selection-border-color: #2a7fc1;
+  --ag-range-selection-background-color: rgba(42, 127, 193, 0.1);
+  --ag-checkbox-checked-color: #2a7fc1;
+  --ag-checkbox-unchecked-color: #999;
+  --ag-checkbox-indeterminate-color: #2a7fc1;
+  --ag-font-size: 14px;
+  --ag-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  --ag-border-color: #e0e0e0;
+  --ag-cell-horizontal-border: 1px solid #e0e0e0;
+  --ag-borders: 1px solid #e0e0e0;
+  --ag-border-radius: 4px;
+}
+
+/* 다크 모드 스타일 */
+.ag-theme-quartz-dark {
+  --ag-header-height: 50px;
+  --ag-row-height: 60px;
+  --ag-header-foreground-color: #e0e0e0;
+  --ag-foreground-color: #e0e0e0;
+  --ag-background-color: #111;
+  --ag-odd-row-background-color: #1a1a1a;
+  --ag-header-background-color: #222;
+  --ag-selected-row-background-color: rgba(42, 127, 193, 0.2);
+  --ag-row-hover-color: rgba(42, 127, 193, 0.1);
+  --ag-column-hover-color: rgba(42, 127, 193, 0.15);
+  --ag-input-focus-border-color: #2a7fc1;
+  --ag-range-selection-border-color: #2a7fc1;
+  --ag-range-selection-background-color: rgba(42, 127, 193, 0.2);
+  --ag-checkbox-checked-color: #2a7fc1;
+  --ag-checkbox-unchecked-color: #666;
+  --ag-checkbox-indeterminate-color: #2a7fc1;
+  --ag-font-size: 14px;
+  --ag-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  --ag-border-color: #333;
+  --ag-cell-horizontal-border: 1px solid #333;
+  --ag-borders: 1px solid #333;
+  --ag-border-radius: 4px;
+}
+
+/* 헤더 스타일 */
+.ag-theme-quartz .ag-header,
+.ag-theme-quartz-dark .ag-header {
+  font-weight: 600;
+}
+
+/* 셀 스타일 */
+.ag-theme-quartz .ag-cell,
+.ag-theme-quartz-dark .ag-cell {
+  padding: 0 10px;
+}
+
+/* 공지사항 배지 스타일 */
+.ag-theme-quartz .ag-cell .chakra-badge,
+.ag-theme-quartz-dark .ag-cell .chakra-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+/* 아이콘 스타일 */
+.ag-theme-quartz .ag-cell svg,
+.ag-theme-quartz-dark .ag-cell svg {
+  vertical-align: middle;
+}
+
+/* 페이지네이션 스타일 */
+.ag-theme-quartz .ag-paging-panel,
+.ag-theme-quartz-dark .ag-paging-panel {
+  height: 50px;
+  border-top: 1px solid var(--ag-border-color);
+}
+
+/* 정렬 아이콘 스타일 */
+.ag-theme-quartz .ag-header-cell-sorted-asc .ag-header-cell-sort-icon,
+.ag-theme-quartz .ag-header-cell-sorted-desc .ag-header-cell-sort-icon,
+.ag-theme-quartz-dark .ag-header-cell-sorted-asc .ag-header-cell-sort-icon,
+.ag-theme-quartz-dark .ag-header-cell-sorted-desc .ag-header-cell-sort-icon {
+  color: #2a7fc1;
+}
+
+/* 필터 스타일 */
+.ag-theme-quartz .ag-filter-condition-operator,
+.ag-theme-quartz .ag-filter-condition,
+.ag-theme-quartz-dark .ag-filter-condition-operator,
+.ag-theme-quartz-dark .ag-filter-condition {
+  background-color: var(--ag-background-color);
+  border: 1px solid var(--ag-border-color);
+  border-radius: var(--ag-border-radius);
+}
+
+/* 커스텀 셀 렌더러 스타일 */
+.ag-theme-quartz .ag-cell .title-renderer,
+.ag-theme-quartz-dark .ag-cell .title-renderer {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.ag-theme-quartz .ag-cell .title-renderer .chakra-icon,
+.ag-theme-quartz-dark .ag-cell .title-renderer .chakra-icon {
+  margin-left: 4px;
+  flex-shrink: 0;
+}

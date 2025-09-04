@@ -1,0 +1,211 @@
+spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  legacy:
+    processing: true
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${FILE_MAX_SIZE:100MB}
+      max-request-size: ${FILE_MAX_REQUEST_SIZE:100MB}
+  file:
+    upload-base-path: ${FILE_UPLOAD_DIR:./uploads}
+    storage:
+      type: ${FILE_STORAGE_TYPE:local}
+      local:
+        base-path: ${FILE_UPLOAD_DIR:./uploads}
+      s3:
+        bucket: ${FILE_STORAGE_S3_BUCKET:cms-files}
+        region: ${FILE_STORAGE_S3_REGION:ap-northeast-2}
+        cdn-url: ${FILE_STORAGE_S3_CDN_URL:}
+  jackson:
+    time-zone: Asia/Seoul
+  datasource:
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.mariadb.jdbc.Driver}
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:70}
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:30000}
+      idle-timeout: ${DB_IDLE_TIMEOUT:600000}
+      max-lifetime: ${DB_MAX_LIFETIME:1800000}
+      leak-detection-threshold: ${DB_LEAK_DETECTION:60000}
+      cache-prep-stmts: true
+      prep-stmt-cache-size: 250
+      prep-stmt-cache-sql-limit: 2048
+      use-server-prep-stmts: true
+  config:
+    use-legacy-processing: true
+    import: optional:file:.env
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:validate}
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MariaDB103Dialect
+        format_sql: ${JPA_FORMAT_SQL:false}
+        jdbc:
+          time_zone: Asia/Seoul
+          batch_size: 50
+          order_inserts: true
+          order_updates: true
+          batch_versioned_data: true
+        types:
+          print:
+            banner: false
+        globally_quoted_identifiers: true
+        globally_quoted_identifiers_skip_column_definitions: true
+        lock:
+          timeout: 30000
+        connection:
+          isolation: 2
+        query:
+          timeout: 30000
+    database-platform: org.hibernate.dialect.MariaDB103Dialect
+    show-sql: ${JPA_SHOW_SQL:false}
+    database: mysql
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  mvc:
+    hiddenmethod:
+      filter:
+        enabled: true
+    pathmatch:
+      matching-strategy: ant_path_matcher
+  main:
+    allow-bean-definition-overriding: true
+    web-application-type: servlet
+    banner-mode: off
+  security:
+    filter:
+      order: 10
+  http:
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
+  session:
+    timeout: ${SESSION_TIMEOUT:1800}
+    cookie:
+      max-age: ${SESSION_COOKIE_MAX_AGE:1800}
+
+server:
+  servlet:
+    context-path: ${SERVER_SERVLET_CONTEXT_PATH:/}
+    session:
+      timeout: ${SERVER_SERVLET_SESSION_TIMEOUT:3600}
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
+  port: ${SERVER_PORT:8080}
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    cms.enroll.service: ${LOG_LEVEL_CMS_ENROLL:INFO}
+    cms.websocket: ${LOG_LEVEL_CMS_WEBSOCKET:INFO}
+    org.springframework.transaction: ${LOG_LEVEL_TRANSACTION:INFO}
+    org.springframework.retry: ${LOG_LEVEL_RETRY:INFO}
+    cms.kispg: ${LOG_LEVEL_KISPG:INFO}
+    cms.payment: ${LOG_LEVEL_PAYMENT:INFO}
+  file:
+    name: ${LOG_FILE_NAME:backend}
+    path: ${LOG_FILE_PATH:./log}
+  logback:
+    rollingpolicy:
+      max-file-size: ${LOG_MAX_FILE_SIZE:10MB}
+      max-history: ${LOG_MAX_HISTORY:30}
+
+external-api:
+  security:
+    api-key: ${EXTERNAL_API_KEY}
+    whitelist-ips: ${EXTERNAL_API_WHITELIST_IPS}
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+
+springdoc:
+  version: v4.2.0
+  swagger-ui:
+    tags-sorter: alpha
+    operations-sorter: alpha
+    doc-expansion: none
+  api-docs:
+    path: /v3/api-docs
+    groups:
+      enabled: true
+  cache:
+    disabled: true
+
+Globals:
+  LocalIp: ${GLOBALS_LOCAL_IP}
+  pageUnit: ${GLOBALS_PAGE_UNIT:10}
+  pageSize: ${GLOBALS_PAGE_SIZE:10}
+  posblAtchFileSize: ${GLOBALS_POSBL_ATCH_FILE_SIZE:5242880}
+  fileStorePath: ${FILE_UPLOAD_DIR:./uploads}
+  Allow:
+    Origin: ${GLOBALS_ALLOW_ORIGIN}
+
+Sns:
+  naver:
+    clientId: ${SNS_NAVER_CLIENT_ID:YOUR_CLIENT_ID}
+    clientSecret: ${SNS_NAVER_CLIENT_SECRET:YOUR_CLIENT_SECRET}
+    callbackUrl: ${SNS_NAVER_CALLBACK_URL:http://localhost:3000/login/naver/callback}
+  kakao:
+    clientId: ${SNS_KAKAO_CLIENT_ID:YOUR_CLIENT_ID}
+    callbackUrl: ${SNS_KAKAO_CALLBACK_URL:http://localhost:3000/login/kakao/callback}
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token:
+    validity-in-milliseconds: ${JWT_ACCESS_TOKEN_VALIDITY:86400000}
+  refresh-token:
+    validity-in-milliseconds: ${JWT_REFRESH_TOKEN_VALIDITY:2592000000}
+
+# Application specific configurations
+app:
+  api:
+    base-url: ${GLOBALS_IP}
+  locker:
+    fee: ${APP_LOCKER_FEE:5000}
+  enrollment:
+    lock-timeout: ${ENROLLMENT_LOCK_TIMEOUT:30000}
+    retry-attempts: ${ENROLLMENT_RETRY_ATTEMPTS:3}
+    retry-delay: ${ENROLLMENT_RETRY_DELAY:1000}
+    websocket:
+      enabled: ${WEBSOCKET_ENABLED:true}
+      heartbeat-interval: ${WEBSOCKET_HEARTBEAT:30000}
+
+  environment:
+    name: ${ENVIRONMENT_NAME:local}
+    cors-enabled: ${CORS_ENABLED:true}
+
+nice:
+  checkplus:
+    site-code: ${NICE_CHECKPLUS_SITE_CODE}
+    site-password: ${NICE_CHECKPLUS_SITE_PASSWORD}
+    base-callback-url: ${GLOBALS_IP}
+    frontend-redirect-success-path: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_PATH}
+    frontend-redirect-fail-path: ${NICE_CHECKPLUS_FRONTEND_REDIRECT_PATH}
+
+# KISPG Configurations
+kispg:
+  url: ${KISPG_URL}
+  mid: ${KISPG_MID}
+  merchantKey: ${KISPG_MERCHANT_KEY}
+
+cors:
+  allowed-origins: ${GLOBALS_ALLOW_ORIGIN}

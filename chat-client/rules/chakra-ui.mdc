@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Your rule content
+
+- You can @ files here
+- You can use markdown but dont have to
+- When developing a web solution using Cursor AI, any Chakra UI components must reference the documentation under the @chakra-ui namespace to generate code.
