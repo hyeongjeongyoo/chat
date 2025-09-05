@@ -139,6 +139,9 @@ public class SecurityConfig {
 						.antMatchers(HttpMethod.POST, "/api/v1/cms/bbs/article").authenticated()
 						.antMatchers(HttpMethod.PUT, "/api/v1/cms/bbs/article/**").authenticated()
 						.antMatchers(HttpMethod.DELETE, "/api/v1/cms/bbs/article/**").authenticated()
+						// Chat API security rules
+						.antMatchers(HttpMethod.POST, "/api/v1/cms/chat/threads/*/read").hasRole("ADMIN")
+						.antMatchers("/api/v1/chat/**").authenticated()
 						.antMatchers(
 								HttpMethod.POST, "/api/v1/cms/enterprises")
 						.hasRole("ADMIN")
