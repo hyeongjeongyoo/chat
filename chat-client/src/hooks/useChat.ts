@@ -25,16 +25,21 @@ export const useChatMessages = (threadId?: number): UseChatMessagesResult => {
     hasNextPage,
   } = useInfiniteQuery<SpringPage<ChatMessageDto>>({
     queryKey: ["chat", "messages", threadId ?? 0],
-    queryFn: async ({ pageParam = 0 }) => {
+    queryFn: async ({ pageParam = "LAST" }) => {
       if (!threadId) return { content: [], first: true, last: true, number: 0, totalPages: 0 } as SpringPage<ChatMessageDto>;
+      if (pageParam === "LAST") {
+        // 총 페이지 파악 후 마지막 페이지 로드
+        const first = await chatApi.getMessages(threadId, 0, 30);
+        const totalPages = first.totalPages ?? 1;
+        const lastIdx = Math.max(0, totalPages - 1);
+        if (lastIdx === 0) return first;
+        return await chatApi.getMessages(threadId, lastIdx, 30);
+      }
       return await chatApi.getMessages(threadId, pageParam as number, 30);
     },
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) => {
-      const next = (lastPage?.number ?? 0) + 1;
-      if (lastPage?.last) return undefined;
-      return next;
-    },
+    initialPageParam: "LAST" as any,
+    // 위로 스크롤 시 더 과거 페이지(번호 - 1)를 불러옴
+    getNextPageParam: (lastPage) => (lastPage.number > 0 ? lastPage.number - 1 : undefined),
   });
 
   const sendMessage = async (params: { threadId: number; content: string; senderType?: "USER" | "ADMIN"; senderName?: string; messageType?: string; fileName?: string; fileUrl?: string; attachments?: any[] }): Promise<ChatMessageDto> => {
@@ -76,5 +81,3 @@ export const useChatMessages = (threadId?: number): UseChatMessagesResult => {
 };
 
 export default useChatMessages;
-
-

@@ -663,7 +663,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
 
     try {
       // 1) 업로드 (이미 확보한 threadId 사용)
-      const uploadRes = await fileApi.upload(pickedFiles, "CHAT", threadId);
+      const uploadRes = await fileApi.upload(pickedFiles, "CHAT", threadId, { autoMessage: true });
       // 2) 업로드 성공 결과의 다운로드 URL을 낙관적 메시지에 주입 (파일명 매칭 기반)
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "") + "/api/v1";
       const nameToUrl = new Map<string, string>();

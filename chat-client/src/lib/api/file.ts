@@ -33,7 +33,8 @@ export const fileApi = {
   upload: async (
     filesToUpload: File | File[],
     menu: string,
-    menuId: number
+    menuId: number,
+    options?: { autoMessage?: boolean }
   ): Promise<UploadedFileDto[]> => {
     const formData = new FormData();
 
@@ -53,9 +54,12 @@ export const fileApi = {
 
     formData.append("menu", menu);
     formData.append("menuId", String(menuId));
+    if (typeof options?.autoMessage === "boolean") {
+      formData.append("autoMessage", options.autoMessage ? "true" : "false");
+    }
 
     // articleApi.uploadAttachments와 동일하게, config 객체를 전달하지 않음
-    const response = await publicApi.post<UploadedFileDto[]>(
+    const response = await privateApi.post<any>(
       `${BASE_URL}/public/upload`,
       formData,
       {
@@ -65,8 +69,12 @@ export const fileApi = {
       }
     );
 
-    // 공용 클라이언트가 data를 언랩했으므로 배열 그대로 반환
-    return response.data;
+    // privateApi는 ApiResponseSchema 형태일 수 있으므로 안전하게 언랩
+    const payload = (response as any)?.data ?? response;
+    const list = Array.isArray(payload)
+      ? payload
+      : (Array.isArray(payload?.data) ? payload.data : []);
+    return list as UploadedFileDto[];
   },
 
   getList: (params: {

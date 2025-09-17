@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from "react";
 import { Box, Flex, Text, Icon, Input, Button, Badge, IconButton, Image, Link } from "@chakra-ui/react";
-import { LuSend, LuPaperclip, LuPencil, LuTrash2, LuCheck, LuRotateCcw } from "react-icons/lu";
+import { LuSend, LuPaperclip, LuPencil, LuTrash2, LuCheck, LuRotateCcw, LuDownload } from "react-icons/lu";
 import { useChatMessages } from "../../hooks/useChat";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import type { ChatMessageDto } from "@/lib/api/chat";
 import { useQueryClient } from "@tanstack/react-query";
 import { chatApi } from "@/lib/api/chat";
+import { fileApi, type UploadedFileDto } from "@/lib/api/file";
 import { toaster } from "@/components/ui/toaster";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -135,12 +136,15 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
     setTimeout(() => { isProgrammaticScrollRef.current = false; }, 0);
   };
 
-  // 초기 로딩 시 하단 고정
+  // 초기 로딩 시 마지막 페이지 하단으로 스냅
   useEffect(() => {
     if (isLoading) return;
-    if (!didInitScrollRef.current && messages.length > 0) {
-      scrollToBottom("auto");
-      didInitScrollRef.current = true;
+    if (!didInitScrollRef.current) {
+      // 메시지가 하나라도 있으면 하단으로 이동
+      if (messages.length > 0) {
+        scrollToBottom("auto");
+        didInitScrollRef.current = true;
+      }
     }
   }, [isLoading, messages.length]);
 
@@ -311,34 +315,82 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
     if (!file || !selectedThreadId) return;
 
     try {
-      const uploaded = await chatApi.uploadFile(selectedThreadId, file);
-      const downloadUrl = uploaded.downloadUrl || uploaded.fileUrl || "";
-      const viewUrl = uploaded.viewUrl;
-      const originName = uploaded.fileName || file.name;
-      // WS 전송만 수행 (자동 메시지 생성 금지). 첨부형 페이로드만 전송
-      if (!connected) {
-        toaster.create({ title: '연결되지 않아 파일 메시지를 보낼 수 없습니다.', type: 'error' });
-        return;
-      }
-      const wsPayload = {
+      // 1) 낙관적 메시지: 파일명만 표시(임시 음수 ID)
+      const tempId = -Math.floor(Math.random() * 1_000_000) - 1;
+      const tempMsg: any = {
+        id: tempId,
+        threadId: selectedThreadId,
         senderType: 'USER',
         senderName: '상담원',
         messageType: 'FILE',
-        fileName: originName,
-        fileUrl: downloadUrl,
+        content: file.name,
+        fileName: file.name,
+        fileUrl: URL.createObjectURL(file),
         attachments: [
           {
-            originName,
-            downloadUrl,
-            viewUrl,
+            originName: file.name,
+            downloadUrl: URL.createObjectURL(file),
+            viewUrl: URL.createObjectURL(file),
           },
         ],
-        content: '',
-      } as unknown as ChatMessageDto;
-      const ok = sendWebSocketMessage(wsPayload);
-      if (!ok) {
-        toaster.create({ title: '파일 메시지 전송 실패(WS)', type: 'error' });
+        createdAt: new Date().toISOString(),
+      } as ChatMessageDto;
+      queryClient.setQueryData(["chat", "messages", selectedThreadId], (old: any) => {
+        if (!old?.pages) {
+          return { pages: [{ number: 0, content: [tempMsg] }], pageParams: [0] };
+        }
+        const maxPage = old.pages.reduce((acc: number, p: any) => (p.number > acc ? p.number : acc), old.pages[0]?.number ?? 0);
+        const newPages = old.pages.map((p: any) => {
+          if (p.number !== maxPage) return p;
+          const list: ChatMessageDto[] = p.content || [];
+          return { ...p, content: [...list, tempMsg] };
+        });
+        return { ...old, pages: newPages };
+      });
+      if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+
+      // 2) 서버 업로드(메시지 자동생성 사용 안 함: autoMessage=false)
+      const uploadRes = await fileApi.upload(file, "CHAT", selectedThreadId, { autoMessage: false });
+      const uploaded = Array.isArray(uploadRes) && uploadRes.length > 0 ? uploadRes[0] as UploadedFileDto : undefined;
+      const originName = uploaded?.originName || file.name;
+      const baseApi = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "") + "/api/v1";
+      const downloadUrl = uploaded ? `${baseApi}/cms/file/public/download/${uploaded.fileId}` : undefined;
+      const isImage = (uploaded?.mimeType || "").toLowerCase().startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(originName);
+      const messageType = isImage ? "IMAGE" : "FILE";
+      // 3) 메시지 생성(REST) 및 파일-메시지 바인딩
+      const saved = await chatApi.postFileMessage(selectedThreadId, {
+        fileName: originName,
+        fileUrl: downloadUrl || "",
+        messageType,
+        actor: "admin",
+        senderType: "USER",
+      } as any);
+      if (uploaded) {
+        try { await fileApi.attachToMessage((saved as any).id, [uploaded.fileId]); } catch {}
       }
+      const viewUrl = isImage && downloadUrl ? downloadUrl.replace("/download/", "/view/") : undefined;
+      queryClient.setQueryData(["chat", "messages", selectedThreadId], (old: any) => {
+        if (!old?.pages) return old;
+        const maxPage = old.pages.reduce((acc: number, p: any) => (p.number > acc ? p.number : acc), old.pages[0]?.number ?? 0);
+        const newPages = old.pages.map((p: any) => {
+          if (p.number !== maxPage) return p;
+          const list: any[] = p.content || [];
+          return {
+            ...p,
+            content: list.map((m) => (m.id === tempId ? ({
+              ...(saved as any),
+              id: (saved as any).id,
+              threadId: selectedThreadId,
+              senderType: 'USER',
+              messageType,
+              fileName: originName,
+              fileUrl: downloadUrl,
+              attachments: [{ originName, downloadUrl, viewUrl }],
+            } as any) : m)),
+          };
+        });
+        return { ...old, pages: newPages };
+      });
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       console.error('파일 업로드 실패', err);
@@ -379,10 +431,11 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
             const safeSender = (message as any)?.senderType || "ADMIN";
             const isUser = safeSender === "USER";
             const contentStr = typeof message.content === "string" ? message.content : "";
+            const mt = ((message as any)?.messageType || "").toString().toUpperCase();
 
             const makeAbsolute = (url?: string) => {
               if (!url) return undefined;
-              if (/^https?:\/\//i.test(url)) return url;
+              if (/^(https?:|blob:|data:)/i.test(url)) return url;
               return `${REST_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
             };
 
@@ -395,15 +448,20 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
             if (atts) {
               const first = atts[0] as any;
               const origin = (first?.originName as string) || ((message as any).fileName as string) || '';
-              const url = makeAbsolute((first?.viewUrl as string) || (first?.downloadUrl as string));
-              isImage = (origin && isImageByName(origin)) || (!!url && isImageByUrl(url));
+              // 이미지일 때는 viewUrl을 우선 사용, 아니면 downloadUrl
+              const preferred = (first?.viewUrl as string) || (first?.downloadUrl as string);
+              const url = makeAbsolute(preferred);
+              isImage = (mt === 'IMAGE') || (origin && isImageByName(origin)) || (!!url && isImageByUrl(url));
               if (isImage && url) imageSrc = url;
-              downloadHref = url;
+              downloadHref = url || undefined;
             } else if ((message as any).fileUrl) {
-              const url = makeAbsolute((message as any).fileUrl as string);
+              // 메시지 타입이 IMAGE면 viewUrl 경로로 치환
+              const raw = (message as any).fileUrl as string;
+              const preferred = mt === 'IMAGE' && typeof raw === 'string' ? raw.replace('/download/', '/view/') : raw;
+              const url = makeAbsolute(preferred);
               if (url) {
                 const fileName = (message as any).fileName as string | undefined;
-                isImage = (fileName && isImageByName(fileName)) || isImageByUrl(url);
+                isImage = (mt === 'IMAGE') || (fileName && isImageByName(fileName)) || isImageByUrl(url);
                 if (isImage) imageSrc = url;
                 downloadHref = url;
               }
@@ -425,7 +483,7 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
                   borderRadius="lg"
                 >
                   {isImage ? (
-                <Image
+                    <Image
                       src={String(imageSrc || '')}
                       alt={String((message as any).fileName || "image")}
                       maxW="220px"
@@ -481,73 +539,65 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
             </Box>
                 {isUser && message.id && (
                   <Flex gap={1} mt={2} justify={isUser ? "flex-end" : "flex-start"}>
-                    {isEditing ? (
-                      <>
-                        <Tooltip content="저장" showArrow>
-                          <IconButton
-                            aria-label="저장"
-                            size="xs"
-                            rounded="md"
-                            bg="blue.50"
-                            color="blue.600"
-                            _hover={{ bg: "blue.100" }}
-                            _active={{ bg: "blue.200" }}
-                            boxShadow="none"
-                            onClick={applyEdit}
-                          >
-                            <Icon as={LuCheck} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip content="취소" showArrow>
-                          <IconButton
-                            aria-label="취소"
-                            size="xs"
-                            rounded="md"
-                            bg="gray.50"
-                            color="gray.700"
-                            _hover={{ bg: "gray.100" }}
-                            _active={{ bg: "gray.200" }}
-                            boxShadow="none"
-                            onClick={() => { setEditingMessageId(null); setEditText(""); }}
-                          >
-                            <Icon as={LuRotateCcw} />
-                          </IconButton>
-                        </Tooltip>
-                      </>
-                    ) : (
-                      <>
-                        <Tooltip content="수정" showArrow>
-                          <IconButton
-                            aria-label="수정"
-                            size="xs"
-                            rounded="md"
-                            bg="gray.50"
-                            color="gray.700"
-                            _hover={{ bg: "gray.100" }}
-                            _active={{ bg: "gray.200" }}
-                            boxShadow="none"
-                            onClick={() => startEdit(message)}
-                          >
-                            <Icon as={LuPencil} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip content="삭제" showArrow>
-                          <IconButton
-                            aria-label="삭제"
-                            size="xs"
-                            rounded="md"
-                            bg="gray.50"
-                            color="gray.700"
-                            _hover={{ bg: "gray.100" }}
-                            _active={{ bg: "gray.200" }}
-                            boxShadow="none"
-                            onClick={() => confirmDelete(message)}
-                          >
-                            <Icon as={LuTrash2} />
-                          </IconButton>
-                        </Tooltip>
-                      </>
-                    )}
+                    {(() => {
+                      const hasAttachment = !!(atts && atts.length > 0) || !!downloadHref || !!(message as any).fileUrl || isImage;
+                      if (hasAttachment) {
+                        return (
+                          <>
+                            {downloadHref ? (
+                              <Link href={downloadHref} download _hover={{ textDecoration: 'none' }}>
+                                <IconButton aria-label="다운로드" size="xs" rounded="md" bg="gray.50" color="gray.700" _hover={{ bg: "gray.100" }} _active={{ bg: "gray.200" }} boxShadow="none">
+                                  <Icon as={LuDownload} />
+                                </IconButton>
+                              </Link>
+                            ) : (
+                              <Tooltip content="다운로드 링크 없음" showArrow>
+                                <IconButton aria-label="다운로드" size="xs" rounded="md" bg="gray.50" color="gray.400" boxShadow="none" disabled>
+                                  <Icon as={LuDownload} />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                            <Tooltip content="삭제" showArrow>
+                              <IconButton aria-label="삭제" size="xs" rounded="md" bg="gray.50" color="gray.700" _hover={{ bg: "gray.100" }} _active={{ bg: "gray.200" }} boxShadow="none" onClick={() => confirmDelete(message)}>
+                                <Icon as={LuTrash2} />
+                              </IconButton>
+                            </Tooltip>
+                          </>
+                        );
+                      }
+                      // 텍스트 메시지: 수정/삭제
+                      return (
+                        <>
+                          {isEditing ? (
+                            <>
+                              <Tooltip content="저장" showArrow>
+                                <IconButton aria-label="저장" size="xs" rounded="md" bg="blue.50" color="blue.600" _hover={{ bg: "blue.100" }} _active={{ bg: "blue.200" }} boxShadow="none" onClick={applyEdit}>
+                                  <Icon as={LuCheck} />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip content="취소" showArrow>
+                                <IconButton aria-label="취소" size="xs" rounded="md" bg="gray.50" color="gray.700" _hover={{ bg: "gray.100" }} _active={{ bg: "gray.200" }} boxShadow="none" onClick={() => { setEditingMessageId(null); setEditText(""); }}>
+                                  <Icon as={LuRotateCcw} />
+                                </IconButton>
+                              </Tooltip>
+                            </>
+                          ) : (
+                            <>
+                              <Tooltip content="수정" showArrow>
+                                <IconButton aria-label="수정" size="xs" rounded="md" bg="gray.50" color="gray.700" _hover={{ bg: "gray.100" }} _active={{ bg: "gray.200" }} boxShadow="none" onClick={() => startEdit(message)}>
+                                  <Icon as={LuPencil} />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip content="삭제" showArrow>
+                                <IconButton aria-label="삭제" size="xs" rounded="md" bg="gray.50" color="gray.700" _hover={{ bg: "gray.100" }} _active={{ bg: "gray.200" }} boxShadow="none" onClick={() => confirmDelete(message)}>
+                                  <Icon as={LuTrash2} />
+                                </IconButton>
+                              </Tooltip>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </Flex>
                 )}
           </Flex>
