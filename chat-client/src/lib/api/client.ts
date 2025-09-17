@@ -10,8 +10,14 @@ import {
   setToken,
 } from "../auth-utils";
 
-// Java 백엔드 서버 주소 설정
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL + "/api/v1";
+// Java 백엔드 서버 주소 설정 (브라우저 환경에서 환경변수 미설정 시 현재 오리진 사용)
+const resolveApiBase = (): string => {
+  const env = process.env.NEXT_PUBLIC_API_URL;
+  if (env && typeof env === "string") return env.replace(/\/$/, "");
+  if (typeof window !== "undefined") return window.location.origin;
+  return ""; // SSR 등에서 상대경로 사용
+};
+const BASE_URL = resolveApiBase() + "/api/v1";
 
 // 기본 API 클라이언트 설정
 const createApiClient = (needsAuth: boolean): AxiosInstance => {

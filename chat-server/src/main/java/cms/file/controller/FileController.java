@@ -2,6 +2,9 @@ package cms.file.controller;
 
 import cms.common.dto.ApiResponseSchema;
 import cms.file.dto.FileDto;
+import cms.chat.service.ChatService;
+import cms.chat.repository.ChatThreadRepository;
+import cms.chat.domain.ChatThread;
 import cms.file.entity.CmsFile;
 import cms.file.service.FileService;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -14,6 +17,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import javax.persistence.EntityNotFoundException;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +37,9 @@ import java.io.IOException;
 public class FileController {
 
     private final FileService fileService;
+    private final ChatService chatService;
+    private final ChatThreadRepository chatThreadRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     private FileDto convertToDto(CmsFile file) {
         FileDto dto = new FileDto();
@@ -46,13 +56,56 @@ public class FileController {
         dto.setFileOrder(file.getFileOrder());
         dto.setCreatedDate(file.getCreatedDate());
         dto.setUpdatedDate(file.getUpdatedDate());
+        
+        // Always include download/view URLs in responses
+        String base = "/api/v1/cms/file";
+        if (file.getFileId() != null) {
+            dto.setDownloadUrl(base + "/public/download/" + file.getFileId());
+            if (file.getMimeType() != null && file.getMimeType().startsWith("image/")) {
+                dto.setViewUrl(base + "/public/view/" + file.getFileId());
+            }
+        }
         return dto;
+    }
+
+    private boolean shouldAutoCreateMessage(boolean autoMessageParam) {
+        if (!autoMessageParam) return false;
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth == null) return false;
+            for (GrantedAuthority ga : auth.getAuthorities()) {
+                String r = ga.getAuthority();
+                if ("ROLE_ADMIN".equalsIgnoreCase(r) || "ROLE_SYSTEM_ADMIN".equalsIgnoreCase(r)) {
+                    return true;
+                }
+            }
+        } catch (Exception ignore) {}
+        return false;
     }
 
     private List<FileDto> convertToDtoList(List<CmsFile> files) {
         return files.stream()
                 .map(this::convertToDto)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 메시지에 파일들을 바인딩합니다. 업로드 후 메시지 생성이 완료되면 호출합니다.
+     */
+    @PostMapping("/private/attach")
+    public ResponseEntity<ApiResponseSchema<?>> attachFilesToMessage(
+            @RequestParam Long messageId,
+            @RequestParam List<Long> fileIds) {
+        try {
+            fileService.setMessageIdBulk(fileIds, messageId);
+            return ResponseEntity.ok(ApiResponseSchema.success(
+                    String.format("%d files attached to message %d", fileIds.size(), messageId),
+                    "Files attached successfully"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponseSchema.error("Failed to attach files: " + e.getMessage(), "INTERNAL_SERVER_ERR"));
+        }
     }
 
     private CmsFile convertToEntity(FileDto dto) {
@@ -77,7 +130,8 @@ public class FileController {
             @RequestPart(value = "files", required = false) List<MultipartFile> files,
             @RequestPart(value = "file", required = false) MultipartFile singleFile,
             @RequestParam("menu") String menu,
-            @RequestParam("menuId") Long menuId) {
+            @RequestParam("menuId") Long menuId,
+            @RequestParam(value = "autoMessage", defaultValue = "true") boolean autoMessage) {
         
         log.debug("---------------- File Upload (using @RequestPart) Start ----------------");
         log.debug("Received menu: {}, menuId: {}", menu, menuId);
@@ -121,6 +175,38 @@ public class FileController {
                 
         List<CmsFile> uploadedFiles = fileService.uploadFiles(menu, menuId, fileList);
             log.info("Successfully uploaded {} files for menu: {}, menuId: {}", uploadedFiles.size(), menu, menuId);
+
+            // Auto-create chat messages for CHAT menu uploads so attachments persist
+            try {
+                if ("CHAT".equalsIgnoreCase(menu) && menuId != null && shouldAutoCreateMessage(autoMessage)) {
+                    ChatThread thread = chatThreadRepository.findById(menuId)
+                            .orElse(null);
+                    if (thread != null) {
+                        for (CmsFile f : uploadedFiles) {
+                            String messageType = (f.getMimeType() != null && f.getMimeType().startsWith("image/")) ? "IMAGE" : "FILE";
+                            String downloadUrl = "/api/v1/cms/file/public/download/" + f.getFileId();
+                            cms.chat.domain.ChatMessage saved = chatService.sendFileMessage(thread, "ADMIN", f.getOriginName(), downloadUrl, "system", messageType);
+                            // 업로드된 파일을 방금 생성된 메시지에 바인딩
+                            fileService.setMessageId(f.getFileId(), saved.getId());
+                            // 실시간 브로드캐스트로 즉시 반영
+                            try {
+                                java.util.Map<String, Object> payload = new java.util.HashMap<>();
+                                payload.put("id", saved.getId());
+                                payload.put("threadId", thread.getId());
+                                payload.put("senderType", saved.getSenderType());
+                                payload.put("content", saved.getContent());
+                                payload.put("createdAt", saved.getCreatedAt());
+                                payload.put("messageType", saved.getMessageType());
+                                payload.put("fileName", saved.getFileName());
+                                payload.put("fileUrl", saved.getFileUrl());
+                                messagingTemplate.convertAndSend("/sub/chat/" + thread.getId(), payload);
+                            } catch (Exception ignore) {}
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("Failed to auto-create chat messages for uploaded files. menu={}, menuId={}, error={}", menu, menuId, ex.getMessage());
+            }
             return ResponseEntity.ok(ApiResponseSchema.success(
                 convertToDtoList(uploadedFiles),
                 "Files uploaded successfully"
@@ -133,7 +219,7 @@ public class FileController {
                     "File upload failed: " + e.getMessage(),
                     "INTERNAL_SERVER_ERR"
                     // Consider omitting stack trace in production for security
-                    // , e.getStackTrace().toString() 
+                    // , e.getStackTrace().toString()
                 ));
         }
     }

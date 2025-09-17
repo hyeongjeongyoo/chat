@@ -11,3 +11,5 @@ import java.util.Optional;
 public interface ChatParticipantRepository extends JpaRepository<ChatParticipant, Long> {
     Optional<ChatParticipant> findByThreadAndUserIdentifier(ChatThread thread, String userIdentifier);
 }
+
+

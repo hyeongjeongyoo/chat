@@ -28,8 +28,14 @@ public class ChatSocketController {
     public void send(@DestinationVariable Long threadId, @Payload ChatTextMessage payload) {
         ChatThread thread = chatThreadRepository.findById(threadId)
                 .orElseThrow(() -> new IllegalArgumentException("Thread not found"));
-        chatService.sendTextMessage(thread, payload.getSenderType(), payload.getContent(), payload.getActor());
-        OutboundMessage outbound = OutboundMessage.fromPayload(payload);
+        // 저장된 메시지 반환 받아 브로드캐스트에 식별자/스레드/시간 포함
+        cms.chat.domain.ChatMessage saved = chatService.sendTextMessage(
+                thread,
+                payload.getSenderType(),
+                payload.getContent(),
+                payload.getActor()
+        );
+        OutboundMessage outbound = OutboundMessage.fromEntity(saved);
         messagingTemplate.convertAndSend("/sub/chat/" + threadId, outbound);
     }
 
@@ -48,14 +54,18 @@ public class ChatSocketController {
 
     public static class OutboundMessage {
         private Long id;
+        private Long threadId;
         private String senderType;
         private String messageType;
         private String content;
         private String fileName;
         private String fileUrl;
+        private java.time.LocalDateTime createdAt;
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
+        public Long getThreadId() { return threadId; }
+        public void setThreadId(Long threadId) { this.threadId = threadId; }
         public String getSenderType() { return senderType; }
         public void setSenderType(String senderType) { this.senderType = senderType; }
         public String getMessageType() { return messageType; }
@@ -66,12 +76,19 @@ public class ChatSocketController {
         public void setFileName(String fileName) { this.fileName = fileName; }
         public String getFileUrl() { return fileUrl; }
         public void setFileUrl(String fileUrl) { this.fileUrl = fileUrl; }
+        public java.time.LocalDateTime getCreatedAt() { return createdAt; }
+        public void setCreatedAt(java.time.LocalDateTime createdAt) { this.createdAt = createdAt; }
 
-        public static OutboundMessage fromPayload(ChatTextMessage p) {
+        public static OutboundMessage fromEntity(cms.chat.domain.ChatMessage m) {
             OutboundMessage dto = new OutboundMessage();
-            dto.setSenderType(p.getSenderType());
-            dto.setMessageType("TEXT");
-            dto.setContent(p.getContent());
+            dto.setId(m.getId());
+            dto.setThreadId(m.getThread().getId());
+            dto.setSenderType(m.getSenderType());
+            dto.setMessageType(m.getMessageType());
+            dto.setContent(m.getContent());
+            dto.setFileName(m.getFileName());
+            dto.setFileUrl(m.getFileUrl());
+            dto.setCreatedAt(m.getCreatedAt());
             return dto;
         }
     }

@@ -50,6 +50,9 @@ public class CmsFile {
     @Column(name = "file_order")
     private Integer fileOrder = 0;
 
+    @Column(name = "message_id")
+    private Long messageId;
+
     @Column(name = "created_by", length = 36)
     private String createdBy;
 
@@ -69,4 +72,4 @@ public class CmsFile {
     @UpdateTimestamp
     @Column(name = "updated_date")
     private LocalDateTime updatedDate;
-} 
+}

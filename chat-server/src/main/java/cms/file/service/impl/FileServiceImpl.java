@@ -374,4 +374,21 @@ public class FileServiceImpl implements FileService {
             return false;
         }
     }
+
+    @Override
+    @Transactional
+    public void setMessageId(Long fileId, Long messageId) {
+        CmsFile file = fileRepository.findById(fileId)
+                .orElseThrow(() -> new RuntimeException("파일을 찾을 수 없습니다. ID: " + fileId));
+        file.setMessageId(messageId);
+        fileRepository.save(file);
+    }
+
+    @Override
+    @Transactional
+    public void setMessageIdBulk(java.util.List<Long> fileIds, Long messageId) {
+        for (Long fid : fileIds) {
+            setMessageId(fid, messageId);
+        }
+    }
 }

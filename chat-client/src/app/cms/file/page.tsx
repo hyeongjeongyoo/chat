@@ -8,28 +8,33 @@ import {
   Badge,
   VStack,
   Text,
-  Button,
-  Icon,
+  HStack,
+  IconButton,
+  Image,
 } from "@chakra-ui/react";
-import { FileList } from "./components/FileList";
-import { FileEditor } from "./components/FileEditor";
+// 기존 컴포넌트는 유지하되, 본 페이지에서는 좌측을 채널/스레드 패널로 활용
+// import { FileList } from "./components/FileList";
+// import { FileEditor } from "./components/FileEditor";
 import { GridSection } from "@/components/ui/grid-section";
 import { useColors } from "@/styles/theme";
-import { DndProvider } from "react-dnd";
-import { HTML5Backend } from "react-dnd-html5-backend";
+//
 import { toaster, Toaster } from "@/components/ui/toaster";
-import { Main } from "@/components/layout/view/Main";
+//
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { menuApi, menuKeys, UpdateMenuOrderRequest } from "@/lib/api/menu";
 import { fileApi } from "@/lib/api/file";
+import { useSearchParams, useRouter } from "next/navigation";
 
 import { sortMenus } from "@/lib/api/menu";
 import { Menu } from "@/types/api";
 import { File as CustomFile } from "./types";
 import { FileUploadDialog } from "./components/FileUploadDialog";
-import { FiUpload } from "react-icons/fi";
+import { LuDownload, LuFile, LuImage } from "react-icons/lu";
+import { privateApiMethods } from "@/lib/api/client";
+import { SidePanels } from "@/components/chat/SidePanels";
+import { chatApi } from "@/lib/api/chat";
 
 type MenuType = Menu["type"]; // "LINK" | "FOLDER" | "BOARD" | "CONTENT" | "POPUP" | "PROGRAM"
 type ModuleType = "CONTENT" | "POPUP" | "BBS" | "PROGRAM";
@@ -42,6 +47,20 @@ const MODULE_MAP: Record<MenuType, ModuleType> = {
   POPUP: "POPUP", // 팝업은 팝업 이미지로 처리
   PROGRAM: "PROGRAM", // 프로그램은 프로그램 자료로 처리
 };
+
+// 채팅관리 좌측 목록과 동일한 형태의 임시 채널/스레드
+type Channel = { id: number; code: string; name: string };
+type Thread = { id: number; channelId: number; userIdentifier: string; userName: string; lastAt?: string };
+
+const mockChannels: Channel[] = [
+  { id: 1, code: "TEST", name: "CMS01" },
+];
+
+const mockThreads: Thread[] = [
+  { id: 2, channelId: 1, userIdentifier: "thread-2", userName: "사용자#2", lastAt: new Date().toISOString() },
+  { id: 11, channelId: 1, userIdentifier: "visitor-001", userName: "방문자A", lastAt: new Date().toISOString() },
+  { id: 12, channelId: 1, userIdentifier: "visitor-002", userName: "방문자B", lastAt: new Date().toISOString() },
+];
 
 function findParentMenu(menus: Menu[], targetId: number): Menu | null {
   if (targetId === -1) {
@@ -86,6 +105,16 @@ export default function MenuManagementPage() {
   );
   const colors = useColors();
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const threadIdParam = searchParams.get("threadId");
+  const channelIdParam = searchParams.get("channelId");
+  const threadId = threadIdParam ? Number(threadIdParam) : null;
+  const channelId = channelIdParam ? Number(channelIdParam) : null;
+  const [filterChannelCode, setFilterChannelCode] = useState<string>("");
+  const [filterThreadId, setFilterThreadId] = useState<string>(threadId ? String(threadId) : "");
+  const [selectedChannelCode, setSelectedChannelCode] = useState<string>(filterChannelCode || "TEST");
+  const [selectedThreadIdForView, setSelectedThreadIdForView] = useState<number | null>(threadId ?? null);
 
   // 메뉴 목록 가져오기
   const { data: menuResponse, isLoading: isMenusLoading } = useQuery<Menu[]>({
@@ -120,17 +149,75 @@ export default function MenuManagementPage() {
 
   // 파일 목록 조회
   const { data: fileList } = useQuery<CustomFile[]>({
-    queryKey: ["file"],
+    queryKey: ["file", "CHAT", "all"],
     queryFn: async () => {
       try {
-        const response = await fileApi.getAllFiles();
-        return response.data;
+        const list = await privateApiMethods.get<CustomFile[]>(
+          "/cms/file/private/all",
+          { params: { menu: "CHAT", publicYn: "Y", page: 0, size: 1000 } } as any
+        );
+        return list as unknown as CustomFile[];
       } catch (error) {
-        return [];
+        return [] as any[];
       }
     },
     enabled: menus.length > 0,
   });
+
+  const filesData = React.useMemo(() => {
+    if (Array.isArray(fileList)) return fileList as any[];
+    const maybe = (fileList as any)?.data;
+    return Array.isArray(maybe) ? maybe : [];
+  }, [fileList]);
+
+  // 선택한 채널의 스레드 목록을 가져와 채널 단위로 파일을 필터링한다
+  const { data: channelThreads } = useQuery<
+    Array<{ id: number; channelId: number; userIdentifier: string; userName?: string }> | undefined
+  >({
+    queryKey: ["chat-threads-by-channel", channelId],
+    queryFn: async () => {
+      if (!channelId) return [];
+      try {
+        const threads = await chatApi.getThreadsByChannel(channelId);
+        return threads;
+      } catch (e) {
+        return [];
+      }
+    },
+    enabled: !!channelId,
+  });
+
+  const filteredFiles = React.useMemo(() => {
+    if (!channelId) return filesData;
+    const threadIdSet = new Set<number>((channelThreads || []).map((t) => t.id));
+    return filesData.filter((f: any) => threadIdSet.has(Number((f as any).menuId ?? 0)));
+  }, [filesData, channelThreads, channelId]);
+
+  // 파일 목록에서 스레드 목록(사람) 추출 및 초기 선택: URL threadId > 첫 항목
+  const threadsFromFiles = React.useMemo(() => {
+    const map = new Map<number, { id: number; count: number; latest?: string }>();
+    for (const f of filesData) {
+      const t = Number((f as any).menuId ?? 0);
+      if (!t) continue;
+      const prev = map.get(t) || { id: t, count: 0, latest: (f as any).createdDate };
+      prev.count += 1;
+      const cd = (f as any).createdDate as string | undefined;
+      if (!prev.latest || (cd && cd > prev.latest)) prev.latest = cd;
+      map.set(t, prev);
+    }
+    return Array.from(map.values()).sort((a, b) => (b.latest || "").localeCompare(a.latest || ""));
+  }, [filesData]);
+
+  useEffect(() => {
+    if (selectedThreadIdForView != null) return;
+    if (threadId) {
+      setSelectedThreadIdForView(threadId);
+      return;
+    }
+    if (threadsFromFiles.length > 0) {
+      setSelectedThreadIdForView(threadsFromFiles[0].id);
+    }
+  }, [threadId, threadsFromFiles, selectedThreadIdForView]);
 
   // 메뉴 순서 업데이트 뮤테이션
   const updateOrderMutation = useMutation({
@@ -403,31 +490,22 @@ export default function MenuManagementPage() {
       isHeader: true,
     },
     {
-      id: "menuList",
+      id: "leftNav",
       x: 0,
       y: 1,
       w: 3,
-      h: 5,
-      title: "파일 목록",
-      subtitle: "메뉴별 파일 목록을 확인할 수 있습니다.",
+      h: 11,
+      title: "업체",
+      subtitle: "채널 선택",
     },
     {
-      id: "menuEditor",
-      x: 0,
-      y: 6,
-      w: 3,
-      h: 6,
-      title: "파일 관리",
-      subtitle: "파일을 업로드하고 관리할 수 있습니다.",
-    },
-    {
-      id: "preview",
+      id: "files",
       x: 3,
       y: 1,
       w: 9,
       h: 11,
-      title: "파일 미리보기",
-      subtitle: "선택한 파일의 미리보기를 확인할 수 있습니다.",
+      title: "파일 목록",
+      subtitle: "선택된 업체의 파일",
     },
   ];
 
@@ -452,7 +530,7 @@ export default function MenuManagementPage() {
           <Flex justify="space-between" align="center" h="36px">
             <Flex align="center" gap={2} px={2}>
               <Heading size="lg" color={colors.text.primary}>
-                파일 관리
+                파일 목록 {selectedChannelCode ? `- ${selectedChannelCode === "TEST" ? "CMS01" : selectedChannelCode}` : ""}
               </Heading>
               <Badge
                 bg={colors.secondary.light}
@@ -468,86 +546,76 @@ export default function MenuManagementPage() {
             </Flex>
           </Flex>
 
+          {/* 좌측: 업체 패널 */}
           <Box>
-            <DndProvider backend={HTML5Backend}>
-              <FileList
-                menus={menus}
-                onAddMenu={handleAddMenu}
-                onEditMenu={handleEditMenu}
-                onDeleteMenu={handleDeleteMenu}
-                onMoveMenu={handleMoveMenu}
-                isLoading={isMenusLoading}
-                selectedMenuId={selectedMenu?.id}
-                loadingMenuId={loadingMenuId}
-                forceExpandMenuId={forceExpandMenuId}
-              />
-            </DndProvider>
-          </Box>
-
-          <Box>
-            <FileEditor
-              menu={selectedMenu}
-              onClose={handleCloseEditor}
-              onDelete={handleDeleteMenu}
-              onSubmit={handleSubmit}
-              parentId={parentMenuId}
-              onAddMenu={() => {
-                if (selectedMenu?.type === "FOLDER") {
-                  handleAddMenu(selectedMenu);
-                } else if (selectedMenu?.parentId) {
-                  const parentMenu = findParentMenu(
-                    menus,
-                    selectedMenu.parentId
-                  );
-                  if (parentMenu) {
-                    handleAddMenu(parentMenu);
-                  }
-                } else {
-                  handleAddMenu({
-                    id: -1,
-                    name: "전체",
-                    type: "FOLDER",
-                    visible: true,
-                    sortOrder: 0,
-                    children: menus,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                    displayPosition: "HEADER",
-                    parentId: null,
-                  });
-                }
+            <SidePanels
+              selectedChannelId={channelId ?? undefined}
+              onSelectChannel={(id) => {
+                const params = new URLSearchParams(Array.from(searchParams.entries()));
+                params.set("channelId", String(id));
+                // 스레드 선택은 사용하지 않음(업체 하나로 관리)
+                params.delete("threadId");
+                router.replace(`/cms/file?${params.toString()}`);
               }}
-              existingMenus={menus}
-              isTempMenu={!!tempMenu}
+              selectedThreadId={undefined}
+              onSelectThread={() => { /* no-op */ }}
+              showThreads={false}
             />
           </Box>
 
+          {/* 우측: 파일 목록 패널 */}
           <Box>
-            <Main menus={menus} isPreview={true} currentPage="preview">
-              <></>
-            </Main>
+            <VStack align="stretch" gap={0} px={2} py={2}>
+              <HStack px={2} py={2} borderBottomWidth="1px">
+                <Box flex="1">
+                  <Text fontSize="sm" color="gray.600">파일명</Text>
+                </Box>
+                <Box w="200px">
+                  <Text fontSize="sm" color="gray.600">업로드일</Text>
+                </Box>
+                <Box w="40px" />
+              </HStack>
+              {filteredFiles.length === 0 && (
+                <Box px={2} py={6}>
+                  <Text color="gray.500">표시할 파일이 없습니다.</Text>
+                </Box>
+              )}
+              {filteredFiles.map((f: any) => {
+                const api = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "") + "/api/v1";
+                const downloadUrl = `${api}/cms/file/public/download/${f.fileId}`;
+                const isImage = (f.mimeType || "").startsWith("image/");
+                return (
+                  <HStack key={f.fileId} px={2} py={3} borderBottomWidth="1px" align="center">
+                    <Box flex="1">
+                      <HStack>
+                        {isImage ? <LuImage size={18} /> : <LuFile size={18} />}
+                        <Text fontWeight="medium">{f.originName}</Text>
+                      </HStack>
+                    </Box>
+                    <Box w="200px">
+                      <VStack align="start" gap={0}>
+                        {f.createdDate && (
+                          <Text fontSize="sm">{new Date(f.createdDate).toLocaleDateString()}</Text>
+                        )}
+                        {f.createdDate && (
+                          <Text fontSize="xs" color="gray.500">{new Date(f.createdDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>
+                        )}
+                      </VStack>
+                    </Box>
+                    <Box w="40px" display="flex" justifyContent="center">
+                      <a href={downloadUrl} target="_blank" rel="noreferrer">
+                        <IconButton aria-label="다운로드" size="xs" variant="ghost">
+                          <LuDownload size={16} />
+                        </IconButton>
+                      </a>
+                    </Box>
+                  </HStack>
+                );
+              })}
+            </VStack>
           </Box>
 
-          <Box>
-            {selectedMenu && (
-              <VStack gap={4} align="stretch">
-                <Flex justify="space-between" align="center">
-                  <Text>
-                    선택된 메뉴: {selectedMenu.name} (타입: {selectedMenu.type},
-                    모듈: {MODULE_MAP[selectedMenu.type]})
-                  </Text>
-                  <Button
-                    colorPalette="blue"
-                    onClick={() => setIsUploadDialogOpen(true)}
-                  >
-                    <Icon as={FiUpload} />
-                    파일 업로드
-                  </Button>
-                </Flex>
-                {fileList && <Text>파일 목록이 콘솔에 출력됩니다.</Text>}
-              </VStack>
-            )}
-          </Box>
+          {/* 파일관리 패널을 파일 목록에 통합하여 별도 관리 패널 제거 */}
         </GridSection>
       </Box>
       <ConfirmDialog
@@ -561,14 +629,7 @@ export default function MenuManagementPage() {
         backdrop="rgba(0, 0, 0, 0.5)"
       />
       <Toaster />
-      {selectedMenu && (
-        <FileUploadDialog
-          isOpen={isUploadDialogOpen}
-          onClose={() => setIsUploadDialogOpen(false)}
-          module={MODULE_MAP[selectedMenu.type]}
-          moduleId={selectedMenu.id}
-        />
-      )}
+      {/* 업로드 다이얼로그는 현재 페이지에서는 사용하지 않음 */}
     </Box>
   );
 }

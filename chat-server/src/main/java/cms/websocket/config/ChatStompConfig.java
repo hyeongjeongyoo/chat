@@ -7,8 +7,6 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
-import java.util.Arrays;
-
 @Configuration
 @EnableWebSocketMessageBroker
 public class ChatStompConfig implements WebSocketMessageBrokerConfigurer {
@@ -25,10 +23,18 @@ public class ChatStompConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         String[] origins = corsAllowedOrigins.split(",");
+        // 기존 엔드포인트 유지
         registry.addEndpoint("/ws/chat")
-                .setAllowedOriginPatterns(Arrays.asList(origins).toArray(new String[0]))
+                .setAllowedOriginPatterns(origins)
+                .withSockJS();
+        // 별칭 엔드포인트 추가(요청 A: 단일 WS 엔드포인트 통일)
+        registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns(origins)
                 .withSockJS();
     }
 }
+
+
+
 
 

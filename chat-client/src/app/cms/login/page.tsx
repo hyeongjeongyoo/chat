@@ -52,7 +52,7 @@ function LoginForm() {
   useEffect(() => {
     // Only redirect if authenticated and has admin role
     if (isAuthenticated && hasAdminRole) {
-      router.push("/cms/menu");
+      router.push("/cms/chat");
     }
   }, [isAuthenticated, hasAdminRole, router]);
 

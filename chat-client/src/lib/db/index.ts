@@ -13,10 +13,10 @@ interface MySQLResult {
 
 // MySQL 연결 설정
 const dbPool = mysql.createPool({
-  host: process.env.DB_HOST || "172.30.1.11",
-  user: process.env.DB_USER || "handy",
-  password: process.env.DB_PASSWORD || "gosel@1224",
-  database: process.env.DB_NAME || "cms_new",
+  host: process.env.DB_HOST || "172.30.1.10",
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "wpflsid2237@",
+  database: process.env.DB_NAME || "cs_manager",
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,

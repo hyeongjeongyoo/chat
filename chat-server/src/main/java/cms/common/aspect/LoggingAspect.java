@@ -49,8 +49,9 @@ public class LoggingAspect {
 
     public void logActivity(JoinPoint joinPoint, String action, String errorMessage) {
         try {
-            HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
-                    .getRequest();
+            // WebSocket 등 비-HTTP 컨텍스트에서 NPE/JSF 초기화 에러가 발생하지 않도록 방어적으로 처리
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            HttpServletRequest request = attributes != null ? attributes.getRequest() : null;
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
             if (authentication != null && authentication.isAuthenticated()) {
@@ -97,9 +98,9 @@ public class LoggingAspect {
                         defaultOrgId,
                         action,
                         description,
-                        request.getHeader("User-Agent"),
+                        request != null ? request.getHeader("User-Agent") : "N/A",
                         userUuid,
-                        request.getRemoteAddr());
+                        request != null ? request.getRemoteAddr() : "0.0.0.0");
             }
         } catch (Exception e) {
             log.error("Failed to log activity: {}", e.getMessage());
@@ -129,15 +130,17 @@ public class LoggingAspect {
     }
 
     private String getClientIp() {
-        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
-                .getRequest();
-        return request.getRemoteAddr();
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes == null) return "0.0.0.0";
+        HttpServletRequest request = attributes.getRequest();
+        return request != null ? request.getRemoteAddr() : "0.0.0.0";
     }
 
     private String getClientUserAgent() {
-        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
-                .getRequest();
-        return request.getHeader("User-Agent");
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes == null) return "N/A";
+        HttpServletRequest request = attributes.getRequest();
+        return request != null ? request.getHeader("User-Agent") : "N/A";
     }
 
     private void logActivity(String activityType, String description) {

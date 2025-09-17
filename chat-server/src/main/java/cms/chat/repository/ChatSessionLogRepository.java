@@ -11,3 +11,5 @@ import java.util.List;
 public interface ChatSessionLogRepository extends JpaRepository<ChatSessionLog, Long> {
     List<ChatSessionLog> findByThreadOrderByStartedAtDesc(ChatThread thread);
 }
+
+

@@ -61,7 +61,7 @@ export const useAuthActions = () => {
             appUser.role === "ADMIN" ||
             appUser.role === "SYSTEM_ADMIN"
           ) {
-            router.push("/cms/menu");
+            router.push("/cms/chat");
             toaster.create({
               title: "로그인 성공",
               description: "CMS에 오신 것을 환영합니다.",
@@ -155,4 +155,4 @@ export const useAuthActions = () => {
     logout,
     syncAuthState,
   };
-}; 
+};

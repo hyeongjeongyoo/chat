@@ -30,13 +30,14 @@ function Layout({ children }: { children: React.ReactNode }) {
   const isCMSPath = pathname?.startsWith("/cms");
   const isLoginPage = pathname === "/cms/login";
   const isTestPage = pathname === "/cms/test" || pathname === "/cms/test2";
+  const isChatPopup = pathname?.startsWith("/cms/chat-popup");
 
   useEffect(() => {
     setIsSidebarOpen(!!isLargerThanLg);
   }, [isLargerThanLg]);
 
   const shouldShowCMSLayout =
-    isCMSPath && !isRootPath && isAuthenticated && !isLoginPage && !isTestPage;
+    isCMSPath && !isRootPath && isAuthenticated && !isLoginPage && !isTestPage && !isChatPopup;
 
   return (
     <Box bg={mainBg} margin={0} padding={0} minHeight="100vh" width="100vw">
@@ -62,8 +63,8 @@ function Layout({ children }: { children: React.ReactNode }) {
         <Box
           pl="0"
           pr="0"
-          minHeight={{ base: "calc(100vh - 56px)", md: "100vh" }}
-          py={{ base: "56px", md: "0" }}
+          minHeight={{ base: isChatPopup ? "100vh" : "calc(100vh - 56px)", md: "100vh" }}
+          py={isChatPopup ? 0 : { base: "56px", md: "0" }}
           bg={mainBg}
           transition="all 0.2s ease-in-out"
           position="relative"

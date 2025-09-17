@@ -48,6 +48,9 @@ public class ChatThread {
     @Column(name = "created_by", length = 50)
     private String createdBy;
 
+    @Column(name = "created_ip", length = 50)
+    private String createdIp;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -59,6 +62,9 @@ public class ChatThread {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "updated_ip", length = 50)
+    private String updatedIp;
+
     public static ChatThread create(ChatChannel channel, String userIdentifier, String userName, String userIp, String actor) {
         ChatThread thread = new ChatThread();
         thread.channel = channel;
@@ -66,7 +72,33 @@ public class ChatThread {
         thread.userName = userName;
         thread.userIp = userIp;
         thread.createdBy = actor;
+        thread.updatedBy = actor;
+        thread.createdIp = (userIp != null && !userIp.isEmpty()) ? userIp : "127.0.0.1";
+        thread.updatedIp = thread.createdIp;
         return thread;
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        if (this.updatedAt == null) {
+            this.updatedAt = java.time.LocalDateTime.now();
+        }
+        if (this.updatedBy == null || this.updatedBy.isEmpty()) {
+            this.updatedBy = (this.createdBy != null && !this.createdBy.isEmpty()) ? this.createdBy : "system";
+        }
+        if (this.createdIp == null || this.createdIp.isEmpty()) {
+            this.createdIp = "127.0.0.1";
+        }
+        if (this.updatedIp == null || this.updatedIp.isEmpty()) {
+            this.updatedIp = this.createdIp;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        if (this.updatedIp == null || this.updatedIp.isEmpty()) {
+            this.updatedIp = "127.0.0.1";
+        }
     }
 }
 

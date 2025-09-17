@@ -16,7 +16,7 @@ export default function Cms() {
     if (!isLoading && !isAuthenticated) {
       router.push("/cms/login");
     } else {
-      router.push("/cms/menu");
+      router.push("/cms/chat");
     }
   }, [isAuthenticated, isLoading, router]);
 

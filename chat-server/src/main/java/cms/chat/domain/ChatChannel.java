@@ -37,6 +37,9 @@ public class ChatChannel {
     @Column(name = "created_by", length = 50)
     private String createdBy;
 
+    @Column(name = "created_ip", length = 50)
+    private String createdIp;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -48,12 +51,42 @@ public class ChatChannel {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "updated_ip", length = 50)
+    private String updatedIp;
+
     public static ChatChannel create(String cmsCode, String cmsName, String actor) {
         ChatChannel channel = new ChatChannel();
         channel.cmsCode = cmsCode;
         channel.cmsName = cmsName;
         channel.createdBy = actor;
+        channel.updatedBy = actor;
+        // 일부 운영 DB에서는 created_ip / updated_ip 가 NOT NULL 제약일 수 있음
+        channel.createdIp = (channel.createdIp == null ? "127.0.0.1" : channel.createdIp);
+        channel.updatedIp = (channel.updatedIp == null ? channel.createdIp : channel.updatedIp);
         return channel;
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        if (this.updatedAt == null) {
+            this.updatedAt = java.time.LocalDateTime.now();
+        }
+        if (this.updatedBy == null || this.updatedBy.isEmpty()) {
+            this.updatedBy = (this.createdBy != null && !this.createdBy.isEmpty()) ? this.createdBy : "system";
+        }
+        if (this.createdIp == null || this.createdIp.isEmpty()) {
+            this.createdIp = "127.0.0.1";
+        }
+        if (this.updatedIp == null || this.updatedIp.isEmpty()) {
+            this.updatedIp = this.createdIp;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        if (this.updatedIp == null || this.updatedIp.isEmpty()) {
+            this.updatedIp = "127.0.0.1";
+        }
     }
 }
 

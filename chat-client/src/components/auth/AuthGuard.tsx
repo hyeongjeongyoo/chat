@@ -109,7 +109,7 @@ export const AuthGuard = ({
 
         let redirectPath = "/";
         if (userRole === "ADMIN" || userRole === "SYSTEM_ADMIN") {
-          redirectPath = "/cms/menu";
+          redirectPath = "/cms/chat";
         }
         router.push(redirectPath);
         return;

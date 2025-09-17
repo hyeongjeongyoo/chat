@@ -4,6 +4,7 @@ import { Box } from "@chakra-ui/react";
 import { useColors } from "@/styles/theme";
 import { RootLayoutClient } from "@/components/layout/RootLayoutClient";
 import { AuthGuard } from "@/components/auth/AuthGuard";
+import { ChatWindow } from "@/components/chat/ChatWindow";
 
 export function CMSLayoutClient({ children }: { children: React.ReactNode }) {
   const colors = useColors();
@@ -17,6 +18,7 @@ export function CMSLayoutClient({ children }: { children: React.ReactNode }) {
         transition="background-color 0.2s"
       >
         <RootLayoutClient>{children}</RootLayoutClient>
+        <ChatWindow />
       </Box>
     </AuthGuard>
   );

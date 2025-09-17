@@ -132,6 +132,7 @@ public class SecurityConfig {
 				.and()
 				.authorizeHttpRequests(authz -> authz
 						.requestMatchers(this.permitAllRequestMatcher).permitAll()
+						.antMatchers("/ws/**").permitAll()
 						.antMatchers(HttpMethod.GET, "/api/v1/cms/bbs/**").permitAll()
 						.antMatchers(HttpMethod.POST, "/cms/bbs/voice/read/**/comments").authenticated()
 						.antMatchers(HttpMethod.PUT, "/cms/bbs/voice/read/**/comments/**").authenticated()

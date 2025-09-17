@@ -2,7 +2,6 @@ package cms.chat.service;
 
 import cms.chat.domain.*;
 import cms.chat.repository.*;
-import egov.com.cmm.service.EgovFileMngService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -20,28 +19,33 @@ public class ChatService {
     private final ChatParticipantRepository chatParticipantRepository;
     private final ChatSessionLogRepository chatSessionLogRepository;
     private final ChatSettingRepository chatSettingRepository;
-    private final EgovFileMngService egovFileMngService;
 
     public ChatService(ChatChannelRepository chatChannelRepository,
                        ChatThreadRepository chatThreadRepository,
                        ChatMessageRepository chatMessageRepository,
                        ChatParticipantRepository chatParticipantRepository,
                        ChatSessionLogRepository chatSessionLogRepository,
-                       ChatSettingRepository chatSettingRepository,
-                       EgovFileMngService egovFileMngService) {
+                       ChatSettingRepository chatSettingRepository) {
         this.chatChannelRepository = chatChannelRepository;
         this.chatThreadRepository = chatThreadRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.chatParticipantRepository = chatParticipantRepository;
         this.chatSessionLogRepository = chatSessionLogRepository;
         this.chatSettingRepository = chatSettingRepository;
-        this.egovFileMngService = egovFileMngService;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ChatChannel getOrCreateChannel(String cmsCode, String cmsName, String actor) {
-        return chatChannelRepository.findByCmsCode(cmsCode)
-                .orElseGet(() -> chatChannelRepository.save(ChatChannel.create(cmsCode, cmsName, actor)));
+        return chatChannelRepository.findByCmsCodeIgnoreCase(cmsCode)
+                .orElseGet(() -> {
+                    try {
+                        return chatChannelRepository.save(ChatChannel.create(cmsCode, cmsName, actor));
+                    } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                        // Unique constraint race condition safeguard
+                        return chatChannelRepository.findByCmsCodeIgnoreCase(cmsCode)
+                                .orElseThrow(() -> e);
+                    }
+                });
     }
 
     @Transactional
@@ -54,6 +58,28 @@ public class ChatService {
     public ChatMessage sendTextMessage(ChatThread thread, String senderType, String content, String actor) {
         ChatMessage message = ChatMessage.createText(thread, senderType, content, actor);
         return chatMessageRepository.save(message);
+    }
+
+    @Transactional
+    public ChatMessage sendFileMessage(ChatThread thread, String senderType, String fileName, String fileUrl, String actor, String messageType) {
+        ChatMessage message = new ChatMessage();
+        message.setThread(thread);
+        message.setSenderType(senderType);
+        message.setSenderName("ADMIN".equalsIgnoreCase(senderType) ? (actor != null && !actor.isEmpty() ? actor : "admin") :
+                (thread.getUserName() != null && !thread.getUserName().isEmpty() ? thread.getUserName() : thread.getUserIdentifier()));
+        message.setMessageType(messageType != null && !messageType.isEmpty() ? messageType : "FILE");
+        message.setFileName(fileName);
+        message.setFileUrl(fileUrl);
+        message.setContent(fileName);
+        message.setRead(false);
+        message.setCreatedBy(actor);
+        message.setUpdatedBy(actor);
+        message.setUpdatedAt(java.time.LocalDateTime.now());
+        String ip = thread.getUserIp() != null && !thread.getUserIp().isEmpty() ? thread.getUserIp() : "127.0.0.1";
+        message.setCreatedIp(ip);
+        message.setUpdatedIp(ip);
+        ChatMessage saved = chatMessageRepository.saveAndFlush(message);
+        return saved;
     }
 
     @Transactional

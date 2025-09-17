@@ -47,4 +47,8 @@ public interface FileService {
      */
     boolean validateFileIdExtractionLogic();
 
+    // Chat message binding helpers
+    void setMessageId(Long fileId, Long messageId);
+
+    void setMessageIdBulk(java.util.List<Long> fileIds, Long messageId);
 }

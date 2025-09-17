@@ -9,4 +9,5 @@ import java.util.Optional;
 @Repository
 public interface ChatChannelRepository extends JpaRepository<ChatChannel, Long> {
     Optional<ChatChannel> findByCmsCode(String cmsCode);
+    Optional<ChatChannel> findByCmsCodeIgnoreCase(String cmsCode);
 }

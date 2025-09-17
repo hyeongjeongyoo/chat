@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface FileRepository extends JpaRepository<CmsFile, Long>, JpaSpecificationExecutor<CmsFile> {
@@ -43,4 +44,9 @@ public interface FileRepository extends JpaRepository<CmsFile, Long>, JpaSpecifi
         List<CmsFile> findByMenuIn(List<String> menuTypes);
 
         long countByMenuIn(List<String> menuTypes);
+
+        Optional<CmsFile> findTopByMenuAndMenuIdAndOriginNameOrderByCreatedDateDesc(String menu, Long menuId, String originName);
+
+        // Attachments by message
+        List<CmsFile> findByMessageId(Long messageId);
 }

@@ -25,4 +25,7 @@ public class FileDto {
     private String updatedBy;
     private String updatedIp;
     private LocalDateTime updatedDate;
+    // For convenience in chat/history responses
+    private String downloadUrl;
+    private String viewUrl;
 } 

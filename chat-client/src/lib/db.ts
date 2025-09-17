@@ -2,10 +2,10 @@ import mysql from "mysql2/promise";
 
 // MariaDB 연결 풀 설정
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || "172.30.1.11:3306",
+  host: process.env.DB_HOST || "172.30.1.10:3306",
   user: process.env.DB_USER || "handy",
-  password: process.env.DB_PASSWORD || "gosel@1224", // 기본 비밀번호 설정
-  database: process.env.DB_NAME || "cms_new",
+  password: process.env.DB_PASSWORD || "wpflsid2237@", // 기본 비밀번호 설정
+  database: process.env.DB_NAME || "cs_manager",
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
