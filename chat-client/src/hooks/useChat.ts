@@ -59,9 +59,17 @@ export const useChatMessages = (threadId?: number): UseChatMessagesResult => {
     return saved;
   };
 
-  const updateMessage = async (_params: { messageId: number; content: string }) => {
-    // 서버 UPDATE API는 컨트롤러가 있으므로 여기서는 단순히 클라이언트 캐시 업데이트를 담당
-    // 실제 호출은 필요 시 chatApi에 추가
+  const updateMessage = async (params: { messageId: number; content: string }) => {
+    const saved = await chatApi.updateMessage(params.messageId, { content: params.content, actor: "admin" });
+    // 캐시 업데이트: 해당 메시지 id를 가진 항목 교체
+    queryClient.setQueryData(["chat", "messages", saved.threadId], (old: any) => {
+      if (!old?.pages) return old;
+      const newPages = old.pages.map((p: any) => ({
+        ...p,
+        content: (p.content || []).map((m: any) => (m.id === saved.id ? { ...m, content: saved.content } : m)),
+      }));
+      return { ...old, pages: newPages };
+    });
   };
 
   const deleteMessage = async (_params: { messageId: number }) => {

@@ -108,6 +108,8 @@ type Message = {
   attachment?: { name: string; type?: string; size?: number; downloadUrl?: string; previewUrl?: string };
   // 낙관적 로컬 메시지 식별용(WS 수신 시 중복 제거)
   localDraft?: boolean;
+  // 수정 여부 배지
+  edited?: boolean;
 };
 
 const mockChannels: Channel[] = [
@@ -350,6 +352,15 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
             // 서버에서 수신된 메시지를 즉시 리스트에 반영
             const m = evt && typeof evt === "object" ? evt : undefined;
             if (m) {
+              // 수정 이벤트는 내용만 교체하고 edited 배지 표시
+              if ((m as any).type === "message.updated") {
+                const idToUpdate = (m as any).id ?? (m as any).messageId;
+                const newContent = (m as any).content as string | undefined;
+                if (idToUpdate != null && typeof newContent === "string") {
+                  setMessages(prev => prev.map(x => x.id === idToUpdate ? { ...x, content: newContent, edited: true } : x));
+                }
+                return;
+              }
               // 일부 WS 브로드캐스트는 threadId가 포함되지 않음 → 구독 경로가 스레드별이므로 허용
               const matches = (m as any).threadId ? ((m as any).threadId === threadId || (m as any).threadId === selectedThreadId) : true;
               if (!matches) return;
@@ -729,6 +740,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
 
   const startEdit = (m: Message) => {
     if (m.attachment) return; // 첨부 메시지는 편집 불가
+    if (!m.id || m.id < 1) return; // 임시/낙관적 메시지 편집 금지 (서버 ID 필요)
     if (m.sender !== "ADMIN") return;
     setEditingMessageId(m.id);
     setEditingText(m.content);
@@ -741,9 +753,16 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
 
   const saveEdit = () => {
     if (editingMessageId == null) return;
-    setMessages(prev => prev.map(m => (
-      m.id === editingMessageId ? { ...m, content: editingText } : m
-    )));
+    if (editingMessageId < 1) { cancelEdit(); return; }
+    // 서버 업데이트 호출 및 성공 시 로컬 교체
+    (async () => {
+      try {
+        await chatApi.updateMessage(editingMessageId, { content: editingText, actor: "admin" });
+        setMessages(prev => prev.map(m => (
+          m.id === editingMessageId ? { ...m, content: editingText } : m
+        )));
+      } catch {}
+    })();
     cancelEdit();
   };
 
@@ -945,11 +964,16 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
                 ) : (
                   <Text whiteSpace="pre-wrap">{m.content}</Text>
                 )}
-                <Box mt={1} textAlign="right">
+                <HStack mt={1} justify={isMine ? "flex-end" : "flex-start"} gap={2}>
                   <Text fontSize="xs" color={isMine ? "whiteAlpha.800" : "gray.500"}>
                     {new Date(m.createdAt).toLocaleTimeString()}
                   </Text>
-                </Box>
+                  {m.edited && (
+                    <Badge size="xs" variant={isMine ? "subtle" : "solid"} colorScheme={isMine ? "whiteAlpha" : "gray"} opacity={0.85}>
+                      수정됨
+                    </Badge>
+                  )}
+                </HStack>
               </Box>
               <Flex mt={1} align="center" justify={isMine ? "space-between" : "space-between"}>
                 <HStack gap={1.5} flexShrink={0}>

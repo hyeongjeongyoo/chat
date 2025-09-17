@@ -92,6 +92,20 @@ export const chatApi = {
 		);
 	},
 
+	updateMessage: async (
+		messageId: number,
+		params: { content: string; actor?: string }
+	): Promise<ChatMessageDto> => {
+		const body = new URLSearchParams();
+		body.append("content", params.content);
+		body.append("actor", params.actor ?? "system");
+		return await privateApi.put<ChatMessageDto>(
+			`/cms/chat/messages/${messageId}`,
+			body as any,
+			{ headers: { "Content-Type": "application/x-www-form-urlencoded" } } as any
+		);
+	},
+
 	// 파일 업로드(관리자 API) → 성공 시 파일 메타와 다운로드/보기 링크 반환
 	uploadFile: async (
 		threadId: number,

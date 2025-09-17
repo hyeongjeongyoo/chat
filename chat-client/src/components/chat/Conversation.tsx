@@ -82,6 +82,25 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
             );
             return;
           }
+            if (m.type === "message.updated") {
+              const idToUpdate = m.id ?? m.messageId;
+              const tid = m.threadId ?? selectedThreadId ?? 0;
+              const newContent: string | undefined = m.content;
+              if (idToUpdate != null && newContent != null) {
+                queryClient.setQueryData(
+                  ["chat", "messages", tid],
+                  (old: any) => {
+                    if (!old?.pages) return old;
+                    const newPages = old.pages.map((p: any) => ({
+                      ...p,
+                      content: (p.content || []).map((x: any) => (x.id === idToUpdate ? { ...x, content: newContent, edited: true } : x)),
+                    }));
+                    return { ...old, pages: newPages };
+                  }
+                );
+              }
+              return;
+            }
           // file.created 등은 메시지 목록에 직접 추가하지 않음(별도 처리 대상)
           if (m.type && m.type !== "message.updated") {
             return;
@@ -292,12 +311,14 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
 
 
   const startEdit = (message: ChatMessageDto) => {
+    // 서버에 아직 저장되지 않은 임시 메시지(음수/무효 ID)는 수정 불가
+    if (!message?.id || (typeof message.id === "number" && message.id < 1)) return;
     setEditingMessageId(message.id || null);
     setEditText(message.content || "");
   };
 
   const applyEdit = async () => {
-    if (!selectedThreadId || !editingMessageId) return;
+    if (!selectedThreadId || !editingMessageId || editingMessageId < 1) return;
     await updateMessage({ messageId: editingMessageId, content: editText });
     setEditingMessageId(null);
     setEditText("");
@@ -536,17 +557,22 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
                   ) : (
                     <Text>{contentStr}</Text>
                   )}
-                  <Text
-                    fontSize="xs"
-                    color={isUser ? "whiteAlpha.700" : "gray.500"}
-                    textAlign={isUser ? "right" : "left"}
-                    mt={2}
-                    suppressHydrationWarning
-                  >
-                    {message.createdAt
-                      ? new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                      : ""}
-                  </Text>
+                  <Flex mt={2} align="center" justify={isUser ? "flex-end" : "flex-start"} gap={2}>
+                    <Text
+                      fontSize="xs"
+                      color={isUser ? "whiteAlpha.700" : "gray.500"}
+                      suppressHydrationWarning
+                    >
+                      {message.createdAt
+                        ? new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                        : ""}
+                    </Text>
+                    {(message as any).edited && (
+                      <Badge size="xs" colorScheme={isUser ? "whiteAlpha" : "gray"} variant={isUser ? "subtle" : "solid"} opacity={0.8}>
+                        수정됨
+                      </Badge>
+                    )}
+                  </Flex>
             </Box>
                 {isUser && message.id && (
                   <Flex gap={1} mt={2} justify={isUser ? "flex-end" : "flex-start"}>
