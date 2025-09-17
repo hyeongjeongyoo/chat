@@ -135,6 +135,10 @@ public class ChatController {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread not found"));
             Object message = chatService.sendFileMessage(thread, senderType, fileName, fileUrl, actor, messageType);
             ChatMessageDto dto = toDto(message, threadId);
+            try {
+                // 파일 메시지도 실시간으로 브로드캐스트
+                messagingTemplate.convertAndSend("/sub/chat/" + threadId, dto);
+            } catch (Exception ignore) {}
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
