@@ -106,6 +106,8 @@ type Message = {
   content: string;
   createdAt: string;
   attachment?: { name: string; type?: string; size?: number; downloadUrl?: string; previewUrl?: string };
+  // 낙관적 로컬 메시지 식별용(WS 수신 시 중복 제거)
+  localDraft?: boolean;
 };
 
 const mockChannels: Channel[] = [
@@ -297,6 +299,8 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
   const lastUploadedMapRef = React.useRef<Map<string, string>>(new Map());
   const [threadFiles, setThreadFiles] = React.useState<Array<{ fileId: number; originName: string; mimeType: string; createdDate?: string }>>([]);
   const lastSentRef = React.useRef<{ content: string; at: number } | null>(null);
+  // 최근 수신 이벤트 키(중복 방지: 일시적 이중 브로드캐스트/이중 구독 대응)
+  const recentEventKeysRef = React.useRef<Map<string, number>>(new Map());
 
   // 서버 실제 ID 매핑 캐시 (mockThreadId -> backendThreadId)
   const backendThreadIdMapRef = React.useRef<Record<number, number>>({});
@@ -349,6 +353,25 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
               // 일부 WS 브로드캐스트는 threadId가 포함되지 않음 → 구독 경로가 스레드별이므로 허용
               const matches = (m as any).threadId ? ((m as any).threadId === threadId || (m as any).threadId === selectedThreadId) : true;
               if (!matches) return;
+              // 0) 중복 이벤트 드롭: 같은 payload가 짧은 시간(3초) 내에 반복되면 무시
+              try {
+                const k = [
+                  String((m as any).id ?? ""),
+                  String((m as any).senderType ?? ""),
+                  String((m as any).messageType ?? ""),
+                  String((m as any).content ?? ""),
+                  String((m as any).fileUrl ?? ""),
+                ].join("|");
+                const now = Date.now();
+                const last = recentEventKeysRef.current.get(k) || 0;
+                // 3초 내 동일키 재수신시 무시
+                if (now - last < 3000) return;
+                recentEventKeysRef.current.set(k, now);
+                // 누적 맵 청소(성장 방지)
+                if (recentEventKeysRef.current.size > 200) {
+                  recentEventKeysRef.current.forEach((v, key) => { if (now - v > 10000) recentEventKeysRef.current.delete(key); });
+                }
+              } catch {}
               const apiOrigin = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
               const toAbs = (url?: string) => !url ? undefined : (String(url).startsWith("http") ? String(url) : `${apiOrigin}${url}`);
               const toView = (url?: string) => !url ? undefined : String(url).replace("/download/", "/view/");
@@ -390,11 +413,16 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
                 }
               }
               setMessages(prev => {
-                // 1) 임시(음수 id) 낙관적 메시지 제거: 동일 sender/내용이면 제거
+                // 1) 낙관적 초안 제거: 음수 ID 또는 localDraft=true 중 sender/content 일치 항목 제거
                 const cleaned = prev.filter(m => {
                   const mid = m.id as any;
-                  if (typeof mid === 'number' && mid < 0) {
-                    return !(m.sender === newMsg.sender && m.content === newMsg.content);
+                  const isTempId = typeof mid === 'number' && mid < 0;
+                  const isLocalDraft = !!m.localDraft;
+                  if (isTempId || isLocalDraft) {
+                    // 파일 메시지의 경우 파일명(content) 기준으로도 제거
+                    const sameText = m.content === newMsg.content;
+                    const sameAttachName = !!(m.attachment?.name) && (m.attachment?.name === (fileName || newMsg.content));
+                    return !(m.sender === newMsg.sender && (sameText || sameAttachName));
                   }
                   return true;
                 });
@@ -647,6 +675,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
         sender: "ADMIN" as const,
         content: f.name,
         createdAt: new Date().toISOString(),
+        localDraft: true,
         attachment: {
           name: f.name,
           type: f.type,
@@ -662,53 +691,29 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
     }
 
     try {
-      // 1) 업로드 (이미 확보한 threadId 사용)
-      const uploadRes = await fileApi.upload(pickedFiles, "CHAT", threadId, { autoMessage: true });
-      // 2) 업로드 성공 결과의 다운로드 URL을 낙관적 메시지에 주입 (파일명 매칭 기반)
+      // 1) 업로드 (메시지 자동생성 비활성화: 서버 권한/필터 체인과 무관하게 동작 보장)
+      const uploadRes = await fileApi.upload(pickedFiles, "CHAT", threadId, { autoMessage: false });
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "") + "/api/v1";
-      const nameToUrl = new Map<string, string>();
-      (uploadRes || []).forEach((fi: UploadedFileDto) => {
-        nameToUrl.set(fi.originName, `${baseUrl}/cms/file/public/download/${fi.fileId}`);
-      });
-      // 최근 업로드 맵 갱신
-      lastUploadedMapRef.current = nameToUrl;
-      setOptimistic(prev => prev.map(m => {
-        if (tempIds.includes(m.id) && m.attachment) {
-          const url = nameToUrl.get(m.attachment.name);
-          if (url) {
-            const isImage = !!m.attachment.type && m.attachment.type.startsWith("image/");
-            if (m.attachment.previewUrl && !isImage) {
-              try { URL.revokeObjectURL(m.attachment.previewUrl); } catch {}
-            }
-            return {
-              ...m,
-              attachment: {
-                ...m.attachment,
-                downloadUrl: url,
-                previewUrl: isImage ? url : undefined,
-              },
-            };
-          }
-        }
-        return m;
-      }));
-      // 이미 화면에 있는 메시지(서버가 보낸 메시지 포함)들도 파일명 기준으로 즉시 활성화
-      setMessages(prev => prev.map(m => {
-        if (!m.attachment || m.attachment.downloadUrl) return m;
-        const url = nameToUrl.get(m.attachment.name || m.content);
-        if (!url) return m;
-        return {
-          ...m,
-          attachment: {
-            ...m.attachment,
-            downloadUrl: url,
-          },
-        };
-      }));
-      // 서버에서 업로드시 자동으로 메시지 생성 및 파일 바인딩 처리됨
-      // 최신 서버 데이터 반영
-      try { refetch(); } catch {}
-      // 임시 낙관적 메시지 제거(서버 메시지로 대체)
+      // 2) 업로드된 각 파일에 대해 메시지 생성 후 파일 바인딩
+      for (const fi of (uploadRes || []) as UploadedFileDto[]) {
+        const originName = fi.originName;
+        const downloadUrl = `${baseUrl}/cms/file/public/download/${fi.fileId}`;
+        const isImage = (fi as any).mimeType?.toLowerCase()?.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(originName);
+        const messageType = isImage ? "IMAGE" : "FILE";
+        // 2-1) 메시지 생성 (서버가 저장 및 STOMP 브로드캐스트)
+        const saved = await chatApi.postFileMessage(threadId, {
+          fileName: originName,
+          fileUrl: downloadUrl,
+          messageType,
+          actor: "admin",
+          senderType: "ADMIN",
+        } as any);
+        // 2-2) 업로드된 파일을 방금 생성된 메시지에 바인딩
+        try { await fileApi.attachToMessage((saved as any).id, [fi.fileId]); } catch {}
+        // 2-3) 낙관적 메시지 제거(파일명 매칭) → 서버 브로드캐스트 메시지로 대체되도록 함
+        setOptimistic(prev => prev.filter(m => !(m.attachment && m.attachment.name === originName && tempIds.includes(m.id))));
+      }
+      // 3) 혹시 남은 임시 메시지 일괄 정리
       setOptimistic(prev => prev.filter(m => !tempIds.includes(m.id)));
     } catch (err) {
       // 실패: 임시 메시지는 남기고 사용자 재시도 유도
@@ -754,11 +759,12 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
       const { threadId } = await ensureBackendIds();
       // 낙관적 표시 (실제 threadId 사용)
       const optimisticMsg: Message = {
-        id: Math.floor(Math.random() * 1_000_000),
+        id: -Math.floor(Math.random() * 1_000_000) - 1,
         threadId: threadId,
         sender: "ADMIN",
         content: input,
         createdAt: new Date().toISOString(),
+        localDraft: true,
       };
       setMessages(prev => [...prev, optimisticMsg]);
       if (listRef.current) {
@@ -783,7 +789,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
       }
       // 폴백 시에는 즉시 새로고침으로 동기화
       if (saved) {
-        setMessages(prev => prev.map(m => m.id === optimisticMsg.id ? { ...optimisticMsg, id: saved.id, createdAt: saved.createdAt } : m));
+        setMessages(prev => prev.map(m => m.id === optimisticMsg.id ? { ...optimisticMsg, id: saved.id, createdAt: saved.createdAt, localDraft: false } : m));
       }
     } catch {}
   };

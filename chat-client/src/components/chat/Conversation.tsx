@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from "react";
 import { Box, Flex, Text, Icon, Input, Button, Badge, IconButton, Image, Link } from "@chakra-ui/react";
-import { LuSend, LuPaperclip, LuPencil, LuTrash2, LuCheck, LuRotateCcw, LuDownload } from "react-icons/lu";
+import { LuSend, LuPaperclip, LuPencil, LuTrash2, LuCheck, LuRotateCcw, LuDownload, LuFile } from "react-icons/lu";
 import { useChatMessages } from "../../hooks/useChat";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import type { ChatMessageDto } from "@/lib/api/chat";
@@ -93,7 +93,13 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
         queryClient.setQueryData(
           ["chat", "messages", tid],
           (old: any) => {
-            if (!old?.pages) return old;
+            // 캐시가 아직 없을 때도 실시간으로 보이도록 스켈레톤 페이지 생성
+            if (!old?.pages) {
+              return {
+                pages: [{ number: 0, content: [msg] }],
+                pageParams: [0],
+              };
+            }
             // 현재 로드된 페이지 중 가장 최신 페이지 번호(가장 큰 number 값)를 찾음
             const maxPage = old.pages.reduce((acc: number, p: any) => (p.number > acc ? p.number : acc), old.pages[0]?.number ?? 0);
             const newPages = old.pages.map((p: any) => {
@@ -374,7 +380,12 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
         const maxPage = old.pages.reduce((acc: number, p: any) => (p.number > acc ? p.number : acc), old.pages[0]?.number ?? 0);
         const newPages = old.pages.map((p: any) => {
           if (p.number !== maxPage) return p;
-          const list: any[] = p.content || [];
+          let list: any[] = p.content || [];
+          // 이미 서버에서 동일 메시지(id) 수신되어 추가된 경우, 임시 메시지만 제거
+          if (list.some((x) => x?.id === (saved as any).id)) {
+            return { ...p, content: list.filter((x) => x?.id !== tempId) };
+          }
+          // 그렇지 않으면 임시 메시지를 서버 메시지로 교체
           return {
             ...p,
             content: list.map((m) => (m.id === tempId ? ({
@@ -471,6 +482,8 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
               isImage = true;
             }
 
+            const hasAttachment = !!(atts && atts.length > 0) || !!downloadHref || !!(message as any).fileUrl || isImage;
+
             const isEditing = editingMessageId === message.id && !isImage;
             return (
               <Flex key={message.id} direction="column" align={isUser ? "flex-end" : "flex-start"}>
@@ -496,22 +509,20 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
                   ) : atts ? (
                     <Flex direction="column" gap={2}>
                       {atts.map((att: any, idx: any) => {
-                        const href = makeAbsolute((att?.downloadUrl as string) || (att?.viewUrl as string));
+                        const name = att?.originName || (message as any).fileName || '첨부파일';
                         return (
-                          <Link key={idx} href={href || '#'} download _hover={{ textDecoration: 'none' }}>
-                            <Button variant="outline" size="sm" disabled={!href}>
-                              {att?.originName || '파일 다운로드'}
-                            </Button>
-                          </Link>
+                          <Flex key={idx} align="center" gap={2}>
+                            <Icon as={LuFile} />
+                            <Text>{name}</Text>
+                          </Flex>
                         );
                       })}
                     </Flex>
                   ) : downloadHref ? (
-                    <Link href={downloadHref || '#'} download _hover={{ textDecoration: 'none' }}>
-                      <Button variant="outline" size="sm" disabled={!downloadHref}>
-                        {(message as any).fileName || '파일 다운로드'}
-                      </Button>
-                    </Link>
+                    <Flex align="center" gap={2}>
+                      <Icon as={LuFile} />
+                      <Text>{(message as any).fileName || '첨부파일'}</Text>
+                    </Flex>
                   ) : isEditing ? (
                     <Input
                       value={editText}
@@ -540,7 +551,6 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
                 {isUser && message.id && (
                   <Flex gap={1} mt={2} justify={isUser ? "flex-end" : "flex-start"}>
                     {(() => {
-                      const hasAttachment = !!(atts && atts.length > 0) || !!downloadHref || !!(message as any).fileUrl || isImage;
                       if (hasAttachment) {
                         return (
                           <>
@@ -598,6 +608,24 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
                         </>
                       );
                     })()}
+                  </Flex>
+                )}
+
+                {!isUser && message.id && hasAttachment && (
+                  <Flex gap={1} mt={2} justify="flex-start">
+                    {downloadHref ? (
+                      <Link href={downloadHref} download _hover={{ textDecoration: 'none' }}>
+                        <IconButton aria-label="다운로드" size="xs" rounded="md" bg="gray.50" color="gray.700" _hover={{ bg: "gray.100" }} _active={{ bg: "gray.200" }} boxShadow="none">
+                          <Icon as={LuDownload} />
+                        </IconButton>
+                      </Link>
+                    ) : (
+                      <Tooltip content="다운로드 링크 없음" showArrow>
+                        <IconButton aria-label="다운로드" size="xs" rounded="md" bg="gray.50" color="gray.400" boxShadow="none" disabled>
+                          <Icon as={LuDownload} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </Flex>
                 )}
           </Flex>
