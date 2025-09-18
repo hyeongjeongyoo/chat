@@ -73,7 +73,16 @@ export const useChatMessages = (threadId?: number): UseChatMessagesResult => {
   };
 
   const deleteMessage = async (_params: { messageId: number }) => {
-    // 서버 DELETE API는 컨트롤러가 있으므로 여기서는 단순히 클라이언트 캐시 업데이트를 담당
+    await chatApi.deleteMessage(_params.messageId, { actor: "admin" });
+    // 캐시에서 제거
+    queryClient.setQueryData(["chat", "messages", threadId ?? 0], (old: any) => {
+      if (!old?.pages) return old;
+      const newPages = old.pages.map((p: any) => ({
+        ...p,
+        content: (p.content || []).filter((m: any) => m.id !== _params.messageId),
+      }));
+      return { ...old, pages: newPages };
+    });
   };
 
   return {

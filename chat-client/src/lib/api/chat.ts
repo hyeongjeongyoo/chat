@@ -106,6 +106,16 @@ export const chatApi = {
 		);
 	},
 
+	deleteMessage: async (
+		messageId: number,
+		params?: { actor?: string }
+	): Promise<void> => {
+		return await privateApi.delete<void>(
+			`/cms/chat/messages/${messageId}`,
+			{ params: { actor: params?.actor ?? "admin" } } as any
+		);
+	},
+
 	// 파일 업로드(관리자 API) → 성공 시 파일 메타와 다운로드/보기 링크 반환
 	uploadFile: async (
 		threadId: number,

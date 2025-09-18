@@ -83,11 +83,21 @@ public class ChatService {
     }
 
     @Transactional
+    public ChatMessage updateMessageContent(Long messageId, String newContent, String actor) {
+        ChatMessage message = chatMessageRepository.findById(messageId)
+                .orElseThrow(() -> new IllegalArgumentException("Message not found"));
+        message.setContent(newContent);
+        message.setUpdatedBy(actor);
+        message.setUpdatedAt(java.time.LocalDateTime.now());
+        return chatMessageRepository.saveAndFlush(message);
+    }
+
+    @Transactional
     public void markMessagesAsRead(ChatThread thread, LocalDateTime readTime, String actor) {
         Pageable pageable = PageRequest.of(0, 200);
         Page<ChatMessage> page;
         do {
-            page = chatMessageRepository.findByThreadOrderByCreatedAtAsc(thread, pageable);
+            page = chatMessageRepository.findByThreadAndDeletedYnOrderByCreatedAtAsc(thread, "N", pageable);
             page.getContent().forEach(m -> {
                 if (m.isUnread()) {
                     m.markRead(readTime, actor);
@@ -100,12 +110,12 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public long countUnread(ChatThread thread) {
-        return chatMessageRepository.countByThreadAndIsReadIsFalse(thread);
+        return chatMessageRepository.countByThreadAndIsReadIsFalseAndDeletedYn(thread, "N");
     }
 
     @Transactional(readOnly = true)
     public Page<ChatMessage> getMessages(ChatThread thread, int page, int size) {
-        return chatMessageRepository.findByThreadOrderByCreatedAtAsc(thread, PageRequest.of(page, size));
+        return chatMessageRepository.findByThreadAndDeletedYnOrderByCreatedAtAsc(thread, "N", PageRequest.of(page, size));
     }
 
     @Transactional
@@ -130,5 +140,21 @@ public class ChatService {
     @Transactional(readOnly = true)
     public List<ChatSetting> findSettings(ChatChannel channel) {
         return chatSettingRepository.findByChannel(channel);
+    }
+
+    @Transactional
+    public ChatMessage deleteMessage(Long messageId, String actor) {
+        ChatMessage message = chatMessageRepository.findById(messageId)
+                .orElseThrow(() -> new IllegalArgumentException("Message not found"));
+        // Soft delete
+        try {
+            java.lang.reflect.Method setDeletedYn = message.getClass().getMethod("setDeletedYn", String.class);
+            java.lang.reflect.Method setDeletedAt = message.getClass().getMethod("setDeletedAt", java.time.LocalDateTime.class);
+            java.lang.reflect.Method setDeletedBy = message.getClass().getMethod("setDeletedBy", String.class);
+            setDeletedYn.invoke(message, "Y");
+            setDeletedAt.invoke(message, java.time.LocalDateTime.now());
+            setDeletedBy.invoke(message, actor);
+        } catch (Exception ignore) {}
+        return chatMessageRepository.saveAndFlush(message);
     }
 }

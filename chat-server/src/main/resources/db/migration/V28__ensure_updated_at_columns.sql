@@ -1,0 +1,23 @@
+-- Ensure updated_at columns exist to match JPA @UpdateTimestamp mappings
+
+-- chat_message
+ALTER TABLE chat_message
+ADD COLUMN IF NOT EXISTS `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `updated_by`;
+
+-- Safety: make sure created_at exists (some DBs might miss it)
+ALTER TABLE chat_message
+ADD COLUMN IF NOT EXISTS `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER `created_by`;
+
+-- chat_thread
+ALTER TABLE chat_thread
+ADD COLUMN IF NOT EXISTS `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `updated_by`;
+
+ALTER TABLE chat_thread
+ADD COLUMN IF NOT EXISTS `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER `created_by`;
+
+-- chat_channel
+ALTER TABLE chat_channel
+ADD COLUMN IF NOT EXISTS `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `updated_by`;
+
+ALTER TABLE chat_channel
+ADD COLUMN IF NOT EXISTS `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER `created_by`;

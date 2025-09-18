@@ -77,6 +77,16 @@ public class ChatMessage {
     @Column(name = "updated_ip", length = 50)
     private String updatedIp;
 
+  // Soft delete fields
+  @Column(name = "deleted_yn", length = 1, nullable = false)
+  private String deletedYn = "N";
+
+  @Column(name = "deleted_at")
+  private LocalDateTime deletedAt;
+
+  @Column(name = "deleted_by", length = 64)
+  private String deletedBy;
+
     public static ChatMessage createText(ChatThread thread, String senderType, String content, String actor) {
         ChatMessage message = new ChatMessage();
         message.thread = thread;
@@ -106,6 +116,9 @@ public class ChatMessage {
     protected void onCreate() {
         if (this.updatedAt == null) {
             this.updatedAt = LocalDateTime.now();
+        }
+        if (this.deletedYn == null || this.deletedYn.isEmpty()) {
+        this.deletedYn = "N";
         }
         if (this.senderName == null || this.senderName.isEmpty()) {
             this.senderName = ("ADMIN".equalsIgnoreCase(this.senderType)) ?

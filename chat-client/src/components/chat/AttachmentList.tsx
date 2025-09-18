@@ -3,7 +3,7 @@
 import { Box, Flex, Text, Icon, Link, Button } from "@chakra-ui/react";
 import { LuFile, LuDownload, LuImage } from "react-icons/lu";
 import { useQuery } from "@tanstack/react-query";
-import { publicApi } from "@/lib/api/client";
+import { fileApi } from "@/lib/api/file";
 
 interface AttachmentListProps {
   selectedThreadId: number | null;
@@ -17,12 +17,19 @@ interface Attachment {
   createdAt: string;
 }
 
-const fetchAttachments = async (
-  threadId: number | null
-): Promise<Attachment[]> => {
+const fetchAttachments = async (threadId: number | null): Promise<Attachment[]> => {
   if (!threadId) return [];
-  const { data } = await publicApi.get(`/chat/threads/${threadId}/attachments`);
-  return data;
+  const list = await fileApi.getList({ module: "CHAT", moduleId: threadId });
+  const arr: any[] = Array.isArray(list) ? list : (list && Array.isArray((list as any).data) ? (list as any).data : []);
+  const base = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
+  const toAbs = (u?: string) => !u ? undefined : (u.startsWith("http") ? u : `${base}${u}`);
+  return arr.map((f: any) => ({
+    id: f.fileId,
+    fileName: f.originName,
+    fileUrl: toAbs((f.viewUrl as string) || (f.downloadUrl as string)) || "",
+    fileType: f.mimeType || "application/octet-stream",
+    createdAt: f.createdDate || f.updatedDate || new Date().toISOString(),
+  }));
 };
 
 export const AttachmentList = ({ selectedThreadId }: AttachmentListProps) => {
@@ -61,7 +68,7 @@ export const AttachmentList = ({ selectedThreadId }: AttachmentListProps) => {
   }
 
   return (
-    <Box p={4}>
+    <Box p={4} h="100%" minH={0} overflowY="auto">
       {attachments?.length === 0 ? (
         <Flex justify="center" align="center" h="200px">
           <Text color="gray.500">첨부된 파일이 없습니다.</Text>

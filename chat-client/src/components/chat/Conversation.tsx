@@ -459,7 +459,11 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
         ) : !messages?.length ? (
           <Text textAlign="center" color="gray.500">아직 메시지가 없습니다.</Text>
         ) : (
-          messages.filter(Boolean).map((message) => {
+          messages.filter(Boolean).map((message, idx) => {
+            const prev = idx > 0 ? messages[idx - 1] : undefined;
+            const prevKey = prev?.createdAt ? new Date(prev.createdAt).toLocaleDateString() : null;
+            const curKey = message?.createdAt ? new Date(message.createdAt as any).toLocaleDateString() : null;
+            const showDate = !!curKey && curKey !== prevKey;
             const safeSender = (message as any)?.senderType || "ADMIN";
             const isUser = safeSender === "USER";
             const contentStr = typeof message.content === "string" ? message.content : "";
@@ -507,7 +511,15 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
 
             const isEditing = editingMessageId === message.id && !isImage;
             return (
-              <Flex key={message.id} direction="column" align={isUser ? "flex-end" : "flex-start"}>
+              <>
+                {showDate && (
+                  <Flex key={`sep-${curKey}-${idx}`} justify="center" my={2}>
+                    <Box px={3} py={1} bg="gray.100" color="gray.600" borderRadius="full" fontSize="xs">
+                      {curKey}
+                    </Box>
+                  </Flex>
+                )}
+                <Flex key={message.id} direction="column" align={isUser ? "flex-end" : "flex-start"}>
                 <Box
                   maxW="70%"
                   bg={isUser ? "blue.500" : "gray.100"}
@@ -654,7 +666,8 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
                     )}
                   </Flex>
                 )}
-          </Flex>
+              </Flex>
+              </>
             );
           })
         )}

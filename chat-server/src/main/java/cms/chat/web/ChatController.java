@@ -50,21 +50,9 @@ public class ChatController {
         public void setAttachments(java.util.List<cms.file.dto.FileDto> attachments) { this.attachments = attachments; }
     }
 
-    // 안전 매핑: ChatMessage 인스턴스는 직접 접근, 그렇지 않으면 리플렉션
+    // 안전 매핑: 컴파일러/롬복 이슈 회피를 위해 리플렉션만 사용
     private ChatMessageDto toDto(Object message, Long threadId) {
         ChatMessageDto dto = new ChatMessageDto();
-        if (message instanceof cms.chat.domain.ChatMessage) {
-            cms.chat.domain.ChatMessage m = (cms.chat.domain.ChatMessage) message;
-            dto.setId(m.getId());
-            dto.setThreadId(threadId);
-            dto.setSenderType(m.getSenderType());
-            dto.setContent(m.getContent());
-            dto.setCreatedAt(m.getCreatedAt());
-            dto.setMessageType(m.getMessageType());
-            dto.setFileName(m.getFileName());
-            dto.setFileUrl(m.getFileUrl());
-            return dto;
-        }
         try {
             java.lang.reflect.Method getId = message.getClass().getMethod("getId");
             java.lang.reflect.Method getSenderType = message.getClass().getMethod("getSenderType");
@@ -267,6 +255,67 @@ public class ChatController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread not found"));
         chatService.markMessagesAsRead(thread, java.time.LocalDateTime.now(), actor);
         return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/messages/{messageId}")
+    public ResponseEntity<?> updateMessage(@PathVariable Long messageId,
+                                           @RequestParam @NotBlank String content,
+                                           @RequestParam(defaultValue = "system") String actor) {
+        try {
+            Object updated = chatService.updateMessageContent(messageId, content, actor);
+            Long threadIdFromEntity = null;
+            try {
+                java.lang.reflect.Method getThread = updated.getClass().getMethod("getThread");
+                Object thread = getThread.invoke(updated);
+                if (thread != null) {
+                    java.lang.reflect.Method getId = thread.getClass().getMethod("getId");
+                    threadIdFromEntity = (Long) getId.invoke(thread);
+                }
+            } catch (Exception ignore) {}
+            ChatMessageDto dto = toDto(updated, threadIdFromEntity);
+            try {
+                java.util.Map<String, Object> payload = new java.util.HashMap<>();
+                payload.put("type", "message.updated");
+                try { payload.put("id", messageId); } catch (Exception ignore2) {}
+                if (threadIdFromEntity != null) payload.put("threadId", threadIdFromEntity);
+                payload.put("content", content);
+                if (threadIdFromEntity != null) {
+                    messagingTemplate.convertAndSend("/sub/chat/" + threadIdFromEntity, payload);
+                }
+            } catch (Exception ignore) {}
+            return ResponseEntity.ok(dto);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(cms.common.dto.ApiResponseSchema.error("Failed to update message: " + e.getMessage(), "INTERNAL_SERVER_ERR"));
+        }
+    }
+
+    @DeleteMapping("/messages/{messageId}")
+    public ResponseEntity<?> deleteMessage(@PathVariable Long messageId,
+                                           @RequestParam(defaultValue = "system") String actor) {
+        try {
+            Object deleted = chatService.deleteMessage(messageId, actor);
+            Long threadId = null;
+            try {
+                java.lang.reflect.Method getThread = deleted.getClass().getMethod("getThread");
+                Object thread = getThread.invoke(deleted);
+                if (thread != null) {
+                    java.lang.reflect.Method getId = thread.getClass().getMethod("getId");
+                    threadId = (Long) getId.invoke(thread);
+                }
+            } catch (Exception ignore) {}
+            if (threadId != null) {
+                java.util.Map<String, Object> payload = new java.util.HashMap<>();
+                payload.put("type", "message.deleted");
+                payload.put("id", messageId);
+                payload.put("threadId", threadId);
+                try { messagingTemplate.convertAndSend("/sub/chat/" + threadId, payload); } catch (Exception ignore) {}
+            }
+            return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success("deleted", "ok"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(cms.common.dto.ApiResponseSchema.error("Failed to delete message: " + e.getMessage(), "INTERNAL_SERVER_ERR"));
+        }
     }
 }
 

@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Box, Flex, Heading, Badge, Text, VStack, HStack, Button, Input, IconButton } from "@chakra-ui/react";
+import { toaster } from "@/components/ui/toaster";
 import { GridSection } from "@/components/ui/grid-section";
 import { useColors } from "@/styles/theme";
 import { LuPencil, LuTrash2, LuCheck, LuUndo2, LuPaperclip, LuFile, LuX, LuDownload, LuImage } from "react-icons/lu";
@@ -352,6 +353,14 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
             // 서버에서 수신된 메시지를 즉시 리스트에 반영
             const m = evt && typeof evt === "object" ? evt : undefined;
             if (m) {
+              // 삭제 이벤트: 해당 id 제거
+              if ((m as any).type === "message.deleted") {
+                const idToRemove = (m as any).id ?? (m as any).messageId;
+                if (idToRemove != null) {
+                  setMessages(prev => prev.filter(x => x.id !== idToRemove));
+                }
+                return;
+              }
               // 수정 이벤트는 내용만 교체하고 edited 배지 표시
               if ((m as any).type === "message.updated") {
                 const idToUpdate = (m as any).id ?? (m as any).messageId;
@@ -771,6 +780,16 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
     if (editingMessageId === id) cancelEdit();
   };
 
+  const deleteMessageServer = async (id: number) => {
+    try {
+      if (!id || id < 1) return; // 임시 메시지 무시
+      await chatApi.deleteMessage(id, { actor: "admin" });
+      // 서버 브로드캐스트를 기다리더라도, 로컬에서도 즉시 제거
+      deleteMessage(id);
+      try { toaster.create({ title: "삭제되었습니다.", type: "success" }); } catch {}
+    } catch {}
+  };
+
   const send = async () => {
     if (!input.trim()) return;
     try {
@@ -884,7 +903,12 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
               <HStack key={f.fileId} px={2} py={3} borderBottomWidth="1px" align="center">
                 <HStack flex={1}>
                   {isImage ? <LuImage size={18} /> : <LuFile size={18} />}
-                  <Text fontWeight="medium">{f.originName}</Text>
+                  <Box>
+                    <Text fontWeight="medium">{f.originName}</Text>
+                    <Text fontSize="xs" color="gray.500">
+                      {f.createdDate ? new Date(f.createdDate).toLocaleString() : ""}
+                    </Text>
+                  </Box>
                 </HStack>
                 <Box w="40px" display="flex" justifyContent="center">
                   <a href={downloadUrl} target="_blank" rel="noreferrer">
@@ -923,13 +947,25 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
           }
         }}
       >
-        {currentMessages.map(m => {
+        {currentMessages.map((m, idx) => {
+          const prev = idx > 0 ? currentMessages[idx - 1] : undefined;
+          const prevKey = prev?.createdAt ? new Date(prev.createdAt).toLocaleDateString() : null;
+          const curKey = m?.createdAt ? new Date(m.createdAt).toLocaleDateString() : null;
+          const showDate = !!curKey && curKey !== prevKey;
           const isMine = m.sender === "ADMIN";
           const canEdit = isMine && !m.attachment;
           const canDelete = isMine; // 본문/첨부 모두 삭제 허용
           const isEditing = editingMessageId === m.id;
           return (
-            <Box key={m.id} alignSelf={isMine ? "flex-end" : "flex-start"} maxW="70%">
+            <>
+              {showDate && (
+                <HStack key={`sep-${curKey}-${idx}`} justify="center" my={2} w="100%">
+                  <Box px={3} py={1} bg="gray.100" color="gray.600" borderRadius="full" fontSize="xs">
+                    {curKey}
+                  </Box>
+                </HStack>
+              )}
+              <Box key={m.id} alignSelf={isMine ? "flex-end" : "flex-start"} maxW="70%">
               <Box
                 px={3}
                 py={2}
@@ -1030,6 +1066,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
                 </HStack>
               </Flex>
             </Box>
+            </>
           );
         })}
       </VStack>
@@ -1041,7 +1078,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
             <Text fontSize="sm" color={colors.text.muted}>삭제 후 복구할 수 없습니다.</Text>
             <HStack mt={4} justify="flex-end">
               <Button variant="outline" onClick={() => setConfirmDeleteId(null)}>취소</Button>
-              <Button colorPalette="red" onClick={() => { deleteMessage(confirmDeleteId); setConfirmDeleteId(null); }}>삭제</Button>
+              <Button colorPalette="red" onClick={async () => { await deleteMessageServer(confirmDeleteId); setConfirmDeleteId(null); }}>삭제</Button>
             </HStack>
           </Box>
         </Box>
