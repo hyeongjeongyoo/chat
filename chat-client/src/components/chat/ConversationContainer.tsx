@@ -1,9 +1,11 @@
 "use client";
 
 import { Box, Flex } from "@chakra-ui/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Conversation } from "./Conversation";
 import { AttachmentList } from "./AttachmentList";
+import { ChatStompClient } from "@/lib/ws/chatSocket";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface ConversationContainerProps {
   selectedThreadId: number | null;
@@ -15,6 +17,43 @@ export const ConversationContainer = ({
   compact,
 }: ConversationContainerProps) => {
   const [activeTab, setActiveTab] = useState<"chat" | "attachments">("chat");
+  const [newMsgCount, setNewMsgCount] = useState<number>(0);
+  const stompRef = useRef<ChatStompClient | null>(null);
+  const queryClient = useQueryClient();
+
+  // While on attachments tab, keep a lightweight WS subscription to bump the badge
+  useEffect(() => {
+    const tid = selectedThreadId || undefined;
+    if (activeTab !== "attachments" || !tid) {
+      try { stompRef.current?.disconnect(); } catch {}
+      stompRef.current = null;
+      return;
+    }
+    const c = new ChatStompClient();
+    try {
+      c.connect(tid, (payload: any) => {
+        try {
+          if (payload && typeof payload === "object" && "type" in payload) {
+            // ignore typed events for badge; only count actual new messages
+            if (payload.type === "message.updated" || payload.type === "message.deleted") return;
+          }
+          setNewMsgCount(v => v + 1);
+        } catch {}
+      });
+      stompRef.current = c;
+    } catch {
+      // ignore connect failure
+    }
+    return () => { try { c.disconnect(); } catch {}; };
+  }, [activeTab, selectedThreadId]);
+
+  // When switching back to chat, refresh data if there are unseen messages and reset badge
+  useEffect(() => {
+    if (activeTab === "chat" && newMsgCount > 0 && selectedThreadId) {
+      queryClient.invalidateQueries({ queryKey: ["chat", "messages", selectedThreadId] });
+      setNewMsgCount(0);
+    }
+  }, [activeTab, newMsgCount, selectedThreadId, queryClient]);
 
   return (
     <Box h="100%" display="flex" flexDirection="column" minH={0}>
@@ -28,7 +67,14 @@ export const ConversationContainer = ({
           color={activeTab === "chat" ? "blue.500" : "gray.600"}
           onClick={() => setActiveTab("chat")}
         >
-          대화
+          <Flex align="center" gap={2}>
+            대화
+            {newMsgCount > 0 && activeTab !== "chat" && (
+              <Box bg="red.500" color="white" borderRadius="full" px={2} py={0.5} fontSize="10px" minW="18px" textAlign="center">
+                {newMsgCount}
+              </Box>
+            )}
+          </Flex>
         </Box>
         <Box
           px={compact ? 2 : 4}

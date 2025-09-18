@@ -382,7 +382,45 @@ public class FileController {
                     "Failed to get public file list: " + e.getMessage(),
                     "INTERNAL_SERVER_ERR"
                 ));
+        }
     }
+
+    /**
+     * 채널 ID로 해당 채널의 모든 스레드에 속한 CHAT 파일들을 모아 반환합니다.
+     * 내부적으로 threadId 목록을 조회한 뒤 file(menu='CHAT', menuId in threadIds)을 합쳐서 내려줍니다.
+     */
+    @GetMapping("/private/list-by-channel")
+    public ResponseEntity<ApiResponseSchema<?>> listFilesByChannel(@RequestParam Long channelId) {
+        try {
+            // 채널에 속한 스레드 조회
+            cms.chat.domain.ChatChannel channel = chatService.getChannelById(channelId);
+            if (channel == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(ApiResponseSchema.error("Channel not found: " + channelId, "CHANNEL_NOT_FOUND"));
+            }
+            List<ChatThread> threads = chatThreadRepository.findByChannelOrderByUpdatedAtDesc(channel);
+            if (threads == null || threads.isEmpty()) {
+                return ResponseEntity.ok(ApiResponseSchema.success(new ArrayList<>(), "No threads for channel"));
+            }
+            List<Long> threadIds = threads.stream().map(ChatThread::getId).collect(Collectors.toList());
+            // FileService에 헬퍼가 없으면 단건 반복 조회로 대체(규모가 크면 별도 repo 쿼리 추가)
+            List<CmsFile> all = new ArrayList<>();
+            for (Long tid : threadIds) {
+                List<CmsFile> list = fileService.getList("CHAT", tid, null);
+                if (list != null && !list.isEmpty()) all.addAll(list);
+            }
+            // 최신순(업데이트일시, 없으면 createdDate) 정렬
+            all.sort((a, b) -> {
+                java.time.LocalDateTime la = a.getUpdatedDate() != null ? a.getUpdatedDate() : a.getCreatedDate();
+                java.time.LocalDateTime lb = b.getUpdatedDate() != null ? b.getUpdatedDate() : b.getCreatedDate();
+                return lb.compareTo(la);
+            });
+            return ResponseEntity.ok(ApiResponseSchema.success(convertToDtoList(all), "ok"));
+        } catch (Exception e) {
+            log.error("Failed list-by-channel, channelId={}", channelId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(ApiResponseSchema.error("Failed to list files by channel: " + e.getMessage(), "INTERNAL_SERVER_ERR"));
+        }
     }
 
     @GetMapping("/public/{fileId}")

@@ -124,6 +124,18 @@ export const fileApi = {
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } } as any
     );
   },
+
+  // 채널 ID로 채팅 첨부 전체 조회 (서버: /cms/file/private/list-by-channel)
+  getListByChannel: async (channelId: number): Promise<FileType[]> => {
+    const res = await privateApi.get<FileType[]>(`${BASE_URL}/private/list-by-channel`, {
+      params: { channelId },
+    });
+    // ApiResponseSchema 언랩 대응
+    const payload: any = (res as any)?.data ?? res;
+    if (Array.isArray(payload)) return payload as FileType[];
+    if (Array.isArray(payload?.data)) return payload.data as FileType[];
+    return [] as FileType[];
+  },
 };
 
 // 공개용 API

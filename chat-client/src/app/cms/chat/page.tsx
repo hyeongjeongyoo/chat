@@ -19,15 +19,7 @@ export default function ChatAdminPage() {
   // 페이지 루트에서는 별도 동작 없음. threadId 파라미터 처리는 MessagesPanel 내부에서 수행
 
   const [selectedChannelId, setSelectedChannelId] = React.useState<number>(1);
-  const [selectedThreadId, setSelectedThreadId] = React.useState<number>(() => {
-    const first = mockThreads.find(t => t.channelId === (selectedChannelId || mockChannels[0].id));
-    return first ? first.id : mockThreads[0].id;
-  });
-
-  React.useEffect(() => {
-    const first = mockThreads.find(t => t.channelId === selectedChannelId);
-    if (first) setSelectedThreadId(first.id);
-  }, [selectedChannelId]);
+  const [selectedThreadId, setSelectedThreadId] = React.useState<number>(0);
 
   const layout = [
     { id: "header", x: 0, y: 0, w: 12, h: 1, isStatic: true, isHeader: true },
@@ -95,11 +87,9 @@ export default function ChatAdminPage() {
   );
 }
 
-// ---------- 임시 상태/스토어 (동일 파일 내 간단 구현) ----------
+// ---------- Types ----------
 type Colors = ReturnType<typeof useColors>;
 
-type Channel = { id: number; code: string; name: string };
-type Thread = { id: number; channelId: number; userIdentifier: string; userName: string; unread: number; lastAt: string };
 type Message = {
   id: number;
   threadId: number;
@@ -112,30 +102,6 @@ type Message = {
   // 수정 여부 배지
   edited?: boolean;
 };
-
-const mockChannels: Channel[] = [
-  { id: 1, code: "TEST", name: "Test CMS" },
-  { id: 2, code: "BLOG", name: "Blog CMS" },
-  { id: 3, code: "SHOP", name: "Shop CMS" },
-];
-
-const now = () => new Date().toISOString();
-
-const mockThreads: Thread[] = [
-  { id: 11, channelId: 1, userIdentifier: "visitor-001", userName: "방문자A", unread: 2, lastAt: now() },
-  { id: 12, channelId: 1, userIdentifier: "visitor-002", userName: "방문자B", unread: 0, lastAt: now() },
-  { id: 21, channelId: 2, userIdentifier: "guest-101", userName: "고객C", unread: 1, lastAt: now() },
-];
-
-const mockMessages: Message[] = [
-  { id: 101, threadId: 11, sender: "USER", content: "안녕하세요! 문의드릴게 있어요.", createdAt: now() },
-  { id: 102, threadId: 11, sender: "ADMIN", content: "안녕하세요! 무엇을 도와드릴까요?", createdAt: now() },
-  { id: 103, threadId: 12, sender: "USER", content: "배송 문의드립니다.", createdAt: now() },
-];
-
-// 전역 선택 상태를 매우 간단히 보관하기 위해 파일-로컬 모듈 변수 사용
-let selectedChannelIdGlobal = mockChannels[0].id;
-let selectedThreadIdGlobal = mockThreads.find(t => t.channelId === selectedChannelIdGlobal)?.id ?? mockThreads[0].id;
 
 type PanelProps = { colors: Colors };
 
@@ -173,7 +139,7 @@ function ChannelsPanel({ colors, selectedChannelId, onSelectChannel }: ChannelsP
           onClick={() => onSelectChannel(ch.id)}
         >
           <Text fontWeight="bold">{ch.cmsName || ch.cmsCode}</Text>
-          <Text fontSize="xs" color={colors.text.muted}>code: {ch.cmsCode}</Text>
+        <Text fontSize="xs" color={colors.text.muted}>code: {ch.cmsCode}</Text>
         </Box>
       ))}
     </VStack>
@@ -278,7 +244,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
   const searchParams = useSearchParams();
   const threadIdParam = searchParams.get("threadId");
   const explicitBackendThreadId = threadIdParam ? Number(threadIdParam) : null;
-  const [messages, setMessages] = React.useState<Message[]>(mockMessages);
+  const [messages, setMessages] = React.useState<Message[]>([]);
   const [input, setInput] = React.useState("");
   const [attached, setAttached] = React.useState<File[]>([]);
   const [activeTab, setActiveTab] = React.useState<"chat" | "files">("chat");
@@ -288,6 +254,10 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<number | null>(null);
   const [optimistic, setOptimistic] = React.useState<Message[]>([]);
   const listRef = React.useRef<HTMLDivElement | null>(null);
+  const [newMsgCount, setNewMsgCount] = React.useState<number>(0);
+  const activeTabRef = React.useRef<"chat" | "files">("chat");
+  const [bizOpen, setBizOpen] = React.useState<boolean | null>(null);
+  const [bizMsg, setBizMsg] = React.useState<string>("");
   const userScrolledRef = React.useRef<boolean>(false);
   const autoScrollRef = React.useRef<boolean>(true);
   const didInitScrollRef = React.useRef<boolean>(false);
@@ -310,7 +280,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
   const backendChannelIdMapRef = React.useRef<Record<string, number>>({});
 
   // 현재 선택된 mock thread 에 대한 정보 헬퍼
-  const getMockThread = React.useCallback(() => mockThreads.find(t => t.id === selectedThreadId) || null, [selectedThreadId]);
+  const getMockThread = React.useCallback(() => null, []);
 
   // 채널/스레드 실제 ID 확보 유틸
   const ensureBackendIds = React.useCallback(async () => {
@@ -320,22 +290,11 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
     const mock = getMockThread();
     if (!mock) return { threadId: selectedThreadId };
     // 채널 코드/이름 확보
-    const channel = mockChannels.find(c => c.id === mock.channelId) || mockChannels[0];
+    const channel = null as any;
     // 채널 ID 확보
-    let backendChannelId = backendChannelIdMapRef.current[channel.code as string];
-    if (!backendChannelId) {
-      const ch = await chatApi.createOrGetChannel({ cmsCode: channel.code, cmsName: channel.name, actor: "admin" });
-      backendChannelId = ch.id;
-      backendChannelIdMapRef.current[channel.code as string] = ch.id;
-    }
+    let backendChannelId = undefined as any;
     // 스레드 ID 확보 (mock -> backend 매핑)
-    let backendThreadId = backendThreadIdMapRef.current[mock.id];
-    if (!backendThreadId) {
-      const th = await chatApi.createOrGetThread({ channelId: backendChannelId, userIdentifier: mock.userIdentifier, userName: mock.userName, actor: "admin" });
-      backendThreadId = th.id;
-      backendThreadIdMapRef.current[mock.id] = th.id;
-    }
-    return { threadId: backendThreadId };
+    return { threadId: explicitBackendThreadId ?? selectedThreadId };
   }, [getMockThread, selectedThreadId, explicitBackendThreadId]);
 
   // 선택된 mock thread에 대응하는 백엔드 threadId를 미리 확보해 둠
@@ -452,6 +411,11 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
               if (listRef.current) {
                 listRef.current.scrollTop = listRef.current.scrollHeight;
               }
+              // 파일 탭에 있을 때 새 메시지 도착 알림 및 배지 증가
+              if (activeTabRef.current !== "chat") {
+                setNewMsgCount((v) => v + 1);
+                try { toaster.create({ title: "새 메시지가 도착했습니다.", type: "info" }); } catch {}
+              }
               // refetch()는 중복 유발 가능성이 있어 실시간 수신시 생략
             }
           });
@@ -524,6 +488,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
         sender: sm.senderType === "ADMIN" ? "ADMIN" as const : "USER" as const,
         content: String(sm.content ?? ""),
         createdAt: sm.createdAt,
+        edited: !!(sm as any).edited,
       } as Message;
       if (attachments && attachments.length > 0) {
         const a0 = attachments[0];
@@ -631,6 +596,19 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
     }
   }, [messages.length, optimistic.length]);
 
+  // 파일 탭에서 채팅 탭으로 전환 시, 최신 메시지로 스크롤 고정
+  React.useEffect(() => {
+    if (activeTab !== "chat") return;
+    const el = listRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      isProgrammaticScrollRef.current = true;
+      el.scrollTop = el.scrollHeight;
+      autoScrollRef.current = true;
+      requestAnimationFrame(() => { isProgrammaticScrollRef.current = false; });
+    });
+  }, [activeTab]);
+
   const effectiveThreadId = React.useMemo(() => {
     return backendThreadId ?? (explicitBackendThreadId ?? selectedThreadId);
   }, [backendThreadId, explicitBackendThreadId, selectedThreadId]);
@@ -675,6 +653,20 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
       });
     }
   }, [currentMessages.length]);
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const data = await chatApi.businessHoursStatus();
+        setBizOpen(!!data.open);
+        setBizMsg(String(data.message || ""));
+      } catch {
+        setBizOpen(null);
+      }
+    })();
+  }, []);
+  React.useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
 
   const openFilePicker = () => fileInputRef.current?.click();
 
@@ -874,9 +866,16 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
           borderColor={activeTab === "chat" ? "blue.500" : "transparent"}
           color={activeTab === "chat" ? "blue.600" : "gray.600"}
           cursor="pointer"
-          onClick={() => setActiveTab("chat")}
+          onClick={() => { setActiveTab("chat"); setNewMsgCount(0); }}
         >
-          <Text fontWeight={activeTab === "chat" ? "bold" : "normal"}>대화</Text>
+          <HStack>
+            <Text fontWeight={activeTab === "chat" ? "bold" : "normal"}>대화</Text>
+            {newMsgCount > 0 && (
+              <Box bg="red.500" color="white" borderRadius="full" px={2} py={0.5} fontSize="10px" minW="18px" textAlign="center">
+                {newMsgCount}
+              </Box>
+            )}
+          </HStack>
         </Box>
         <Box
           pb={2}
@@ -947,6 +946,13 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
           }
         }}
       >
+        {bizOpen === false && (
+          <Box px={2}>
+            <Box bg="yellow.50" borderWidth="1px" borderColor="yellow.200" color="yellow.900" p={2} rounded="md">
+              {bizMsg || "현재 운영시간이 아닙니다. 접수되며, 운영시간에 답변드립니다."}
+            </Box>
+          </Box>
+        )}
         {currentMessages.map((m, idx) => {
           const prev = idx > 0 ? currentMessages[idx - 1] : undefined;
           const prevKey = prev?.createdAt ? new Date(prev.createdAt).toLocaleDateString() : null;

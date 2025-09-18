@@ -5,6 +5,7 @@ import cms.chat.repository.ChatChannelRepository;
 import cms.chat.repository.ChatThreadRepository;
 import cms.chat.service.ChatService;
 import org.springframework.data.domain.Page;
+import cms.common.service.BusinessHoursService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -29,6 +30,7 @@ public class ChatController {
         private String fileName;
         private String fileUrl;
         private java.util.List<cms.file.dto.FileDto> attachments;
+        private Boolean edited;
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
@@ -48,6 +50,8 @@ public class ChatController {
         public void setFileUrl(String fileUrl) { this.fileUrl = fileUrl; }
         public java.util.List<cms.file.dto.FileDto> getAttachments() { return attachments; }
         public void setAttachments(java.util.List<cms.file.dto.FileDto> attachments) { this.attachments = attachments; }
+        public Boolean getEdited() { return edited; }
+        public void setEdited(Boolean edited) { this.edited = edited; }
     }
 
     // 안전 매핑: 컴파일러/롬복 이슈 회피를 위해 리플렉션만 사용
@@ -58,21 +62,34 @@ public class ChatController {
             java.lang.reflect.Method getSenderType = message.getClass().getMethod("getSenderType");
             java.lang.reflect.Method getContent = message.getClass().getMethod("getContent");
             java.lang.reflect.Method getCreatedAt = message.getClass().getMethod("getCreatedAt");
+            java.lang.reflect.Method getUpdatedAt = null;
             java.lang.reflect.Method getMessageType = null;
             java.lang.reflect.Method getFileName = null;
             java.lang.reflect.Method getFileUrl = null;
             try { getMessageType = message.getClass().getMethod("getMessageType"); } catch (Exception ignore) {}
             try { getFileName = message.getClass().getMethod("getFileName"); } catch (Exception ignore) {}
             try { getFileUrl = message.getClass().getMethod("getFileUrl"); } catch (Exception ignore) {}
+            try { getUpdatedAt = message.getClass().getMethod("getUpdatedAt"); } catch (Exception ignore) {}
 
             dto.setId((Long) getId.invoke(message));
             dto.setThreadId(threadId);
             dto.setSenderType((String) getSenderType.invoke(message));
             dto.setContent((String) getContent.invoke(message));
-            dto.setCreatedAt((java.time.LocalDateTime) getCreatedAt.invoke(message));
+            java.time.LocalDateTime created = (java.time.LocalDateTime) getCreatedAt.invoke(message);
+            dto.setCreatedAt(created);
             if (getMessageType != null) dto.setMessageType((String) getMessageType.invoke(message));
             if (getFileName != null) dto.setFileName((String) getFileName.invoke(message));
             if (getFileUrl != null) dto.setFileUrl((String) getFileUrl.invoke(message));
+            if (getUpdatedAt != null) {
+                try {
+                    java.time.LocalDateTime updated = (java.time.LocalDateTime) getUpdatedAt.invoke(message);
+                    if (updated != null && created != null && updated.isAfter(created)) {
+                        dto.setEdited(true);
+                    } else {
+                        dto.setEdited(false);
+                    }
+                } catch (Exception ignore) {}
+            }
         } catch (Exception ignore) {
         }
         return dto;
@@ -84,17 +101,20 @@ public class ChatController {
     private final ChatThreadRepository chatThreadRepository;
     private final cms.file.repository.FileRepository fileRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final BusinessHoursService businessHoursService;
 
     public ChatController(ChatService chatService,
                           ChatChannelRepository chatChannelRepository,
                           ChatThreadRepository chatThreadRepository,
                           cms.file.repository.FileRepository fileRepository,
-                          SimpMessagingTemplate messagingTemplate) {
+                          SimpMessagingTemplate messagingTemplate,
+                          BusinessHoursService businessHoursService) {
         this.chatService = chatService;
         this.chatChannelRepository = chatChannelRepository;
         this.chatThreadRepository = chatThreadRepository;
         this.fileRepository = fileRepository;
         this.messagingTemplate = messagingTemplate;
+        this.businessHoursService = businessHoursService;
     }
 
     // 목록 조회: 채널 전체
@@ -241,11 +261,31 @@ public class ChatController {
             try {
                 messagingTemplate.convertAndSend("/sub/chat/" + threadId, dto);
             } catch (Exception ignore) {}
+
+            // Closed hours auto-reply (single-shot throttling simplified with recent timestamp check in service layer could be added later)
+            if (!businessHoursService.isOpen(java.time.LocalDateTime.now()) && "USER".equalsIgnoreCase(senderType)) {
+                try {
+                    Object autoMsg = chatService.sendTextMessage(thread, "ADMIN",
+                            "현재 운영시간(평일 09:00~18:00)이 아닙니다. 접수되었으며 운영시간에 답변드리겠습니다.",
+                            "system");
+                    ChatMessageDto autoDto = toDto(autoMsg, threadId);
+                    messagingTemplate.convertAndSend("/sub/chat/" + threadId, autoDto);
+                } catch (Exception ignore) {}
+            }
             return ResponseEntity.ok(dto);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(cms.common.dto.ApiResponseSchema.error("Failed to send message: " + e.getMessage(), "INTERNAL_SERVER_ERR"));
         }
+    }
+
+    @GetMapping("/business-hours/status")
+    public ResponseEntity<?> businessHoursStatus() {
+        BusinessHoursService.Status status = businessHoursService.currentStatus();
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        body.put("open", status.isOpen());
+        body.put("message", status.getMessage());
+        return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(body, "ok"));
     }
 
     @PostMapping("/threads/{threadId}/read")

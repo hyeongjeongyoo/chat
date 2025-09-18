@@ -41,6 +41,20 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
     selectedThreadId || undefined
   );
 
+  const [bizOpen, setBizOpen] = useState<boolean | null>(null);
+  const [bizMsg, setBizMsg] = useState<string>("");
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await chatApi.businessHoursStatus();
+        setBizOpen(!!res.open);
+        setBizMsg(String(res.message || ""));
+      } catch {
+        setBizOpen(null);
+      }
+    })();
+  }, []);
+
   const messages = useMemo(() => {
     const flat: Record<number, ChatMessageDto> = {};
     const arr = (pages as any[])?.flatMap((p: any) => p.content as ChatMessageDto[]) ?? [];
@@ -137,11 +151,11 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
               const idx = list.findIndex((x) => x.id === msg.id);
               if (idx >= 0) {
                 // 수정: 교체
-                const replaced = list.map((x) => (x.id === msg.id ? msg : x));
+                const replaced = list.map((x) => (x.id === msg.id ? ({ ...x, ...msg, edited: (msg as any).edited ?? (x as any).edited }) : x));
                 return { ...p, content: replaced };
               }
               // 추가: 마지막에 붙임(서버 정렬이 ASC이므로 최신이 뒤에 위치)
-              return { ...p, content: [...list, msg] };
+              return { ...p, content: [...list, { ...msg, edited: (msg as any).edited ?? false }] };
             });
             return { ...old, pages: newPages };
           }
@@ -441,6 +455,11 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
       )}
 
       <Flex ref={listRef} onScroll={onScroll} direction="column" flex="1" minH={0} p={compact ? 2 : 4} overflowY="auto" gap={compact ? 1 : 4}>
+        {bizOpen === false && (
+          <Box bg="yellow.50" borderWidth="1px" borderColor="yellow.200" color="yellow.900" p={2} rounded="md">
+            {bizMsg || "현재 운영시간이 아닙니다. 접수되며, 운영시간에 답변드립니다."}
+          </Box>
+        )}
         {hasNextPage && (
           <Flex justify="center">
             <Button size="xs" variant="outline" onClick={() => {

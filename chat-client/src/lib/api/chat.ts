@@ -28,6 +28,11 @@ export const chatApi = {
             `/cms/chat/channels`
         );
     },
+    businessHoursStatus: async (): Promise<{ open: boolean; message: string }> => {
+        return await privateApi.get<{ open: boolean; message: string }>(
+            `/cms/chat/business-hours/status`
+        );
+    },
 
     getThreadsByChannel: async (channelId: number): Promise<Array<{ id: number; channelId: number; userIdentifier: string; userName?: string }>> => {
         return await privateApi.get<Array<{ id: number; channelId: number; userIdentifier: string; userName?: string }>>(

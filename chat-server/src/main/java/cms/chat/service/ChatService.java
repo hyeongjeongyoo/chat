@@ -142,6 +142,12 @@ public class ChatService {
         return chatSettingRepository.findByChannel(channel);
     }
 
+    @Transactional(readOnly = true)
+    public ChatChannel getChannelById(Long channelId) {
+        return chatChannelRepository.findById(channelId)
+                .orElseThrow(() -> new IllegalArgumentException("Channel not found with id: " + channelId));
+    }
+
     @Transactional
     public ChatMessage deleteMessage(Long messageId, String actor) {
         ChatMessage message = chatMessageRepository.findById(messageId)

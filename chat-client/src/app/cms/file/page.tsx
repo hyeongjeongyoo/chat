@@ -147,56 +147,29 @@ export default function MenuManagementPage() {
     }
   }, [menuResponse]);
 
-  // 파일 목록 조회
-  const { data: fileList } = useQuery<CustomFile[]>({
-    queryKey: ["file", "CHAT", "all"],
+  // 채널 기준 파일 목록 조회 (서버 단에서 집계)
+  const { data: channelFiles } = useQuery<CustomFile[]>({
+    queryKey: ["file", "CHAT", "by-channel", channelId],
     queryFn: async () => {
+      if (!channelId) return [] as any[];
       try {
-        const list = await privateApiMethods.get<CustomFile[]>(
-          "/cms/file/private/all",
-          { params: { menu: "CHAT", publicYn: "Y", page: 0, size: 1000 } } as any
-        );
-        return list as unknown as CustomFile[];
+        const list = await fileApi.getListByChannel(channelId);
+        return Array.isArray(list) ? (list as any[]) : [];
       } catch (error) {
         return [] as any[];
-      }
-    },
-    enabled: menus.length > 0,
-  });
-
-  const filesData = React.useMemo(() => {
-    if (Array.isArray(fileList)) return fileList as any[];
-    const maybe = (fileList as any)?.data;
-    return Array.isArray(maybe) ? maybe : [];
-  }, [fileList]);
-
-  // 선택한 채널의 스레드 목록을 가져와 채널 단위로 파일을 필터링한다
-  const { data: channelThreads } = useQuery<
-    Array<{ id: number; channelId: number; userIdentifier: string; userName?: string }> | undefined
-  >({
-    queryKey: ["chat-threads-by-channel", channelId],
-    queryFn: async () => {
-      if (!channelId) return [];
-      try {
-        const threads = await chatApi.getThreadsByChannel(channelId);
-        return threads;
-      } catch (e) {
-        return [];
       }
     },
     enabled: !!channelId,
   });
 
   const filteredFiles = React.useMemo(() => {
-    if (!channelId) return filesData;
-    const threadIdSet = new Set<number>((channelThreads || []).map((t) => t.id));
-    return filesData.filter((f: any) => threadIdSet.has(Number((f as any).menuId ?? 0)));
-  }, [filesData, channelThreads, channelId]);
+    return Array.isArray(channelFiles) ? (channelFiles as any[]) : [];
+  }, [channelFiles]);
 
   // 파일 목록에서 스레드 목록(사람) 추출 및 초기 선택: URL threadId > 첫 항목
   const threadsFromFiles = React.useMemo(() => {
     const map = new Map<number, { id: number; count: number; latest?: string }>();
-    for (const f of filesData) {
+    for (const f of filteredFiles) {
       const t = Number((f as any).menuId ?? 0);
       if (!t) continue;
       const prev = map.get(t) || { id: t, count: 0, latest: (f as any).createdDate };
@@ -206,7 +179,7 @@ export default function MenuManagementPage() {
       map.set(t, prev);
     }
     return Array.from(map.values()).sort((a, b) => (b.latest || "").localeCompare(a.latest || ""));
-  }, [filesData]);
+  }, [filteredFiles]);
 
   useEffect(() => {
     if (selectedThreadIdForView != null) return;

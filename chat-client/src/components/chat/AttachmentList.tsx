@@ -17,6 +17,26 @@ interface Attachment {
   createdAt: string;
 }
 
+function formatKoreanDate(dateInput: string): string {
+  try {
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return "";
+    const dStr = new Intl.DateTimeFormat("ko-KR", {
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+    }).format(d).replace(/\.$/, "");
+    const tStr = new Intl.DateTimeFormat("ko-KR", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(d);
+    return `${dStr} ${tStr}`;
+  } catch {
+    return "";
+  }
+}
+
 const fetchAttachments = async (threadId: number | null): Promise<Attachment[]> => {
   if (!threadId) return [];
   const list = await fileApi.getList({ module: "CHAT", moduleId: threadId });
@@ -96,7 +116,7 @@ export const AttachmentList = ({ selectedThreadId }: AttachmentListProps) => {
                     {file.fileName}
                   </Text>
                   <Text fontSize="xs" color="gray.500">
-                    {new Date(file.createdAt).toLocaleString()}
+                    {formatKoreanDate(file.createdAt)}
                   </Text>
                 </Box>
               </Flex>

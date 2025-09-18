@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Box } from "@chakra-ui/react";
+import { Box, Flex, Text, Button } from "@chakra-ui/react";
 import { setToken } from "@/lib/auth-utils";
 import ConversationContainer from "@/components/chat/ConversationContainer";
 import { chatApi } from "@/lib/api/chat";
@@ -39,30 +39,69 @@ export default function ChatPopupPage() {
     }
   }, [threadId]);
 
-  // 스레드 유효성 보장: 전달된 threadId가 없거나 존재하지 않으면 기본 채널/스레드를 생성 후 교체
+  const [channels, setChannels] = useState<Array<{ id: number; cmsCode: string; cmsName?: string }>>([]);
+  const [selectedChannelId, setSelectedChannelId] = useState<number | "">("");
+  const [threads, setThreads] = useState<Array<{ id: number; channelId: number; userIdentifier: string; userName?: string }>>([]);
+  const [selectedThread, setSelectedThread] = useState<number | "">("");
+
   useEffect(() => {
+    if (threadId) return;
     (async () => {
       try {
-        if (!threadId) return;
-        // 존재 확인 시도 (페이지 0, size 1)
-        try {
-          await chatApi.getMessages(threadId, 0, 1);
-          return; // OK
-        } catch (e) {
-          // 존재하지 않거나 권한 문제 → 생성 플로우로 이동
-        }
-        // 기본 채널/스레드 생성
-        const channel = await chatApi.createOrGetChannel({ cmsCode: "DEFAULT", cmsName: "Default", actor: "admin" });
-        const thread = await chatApi.createOrGetThread({ channelId: channel.id, userIdentifier: "popup-user", userName: "POPUP", actor: "admin" });
-        const q = new URLSearchParams(searchParams.toString());
-        q.set("threadId", String(thread.id));
-        router.replace(`?${q.toString()}`);
+        const list = await chatApi.getChannels();
+        setChannels(list || []);
+      } catch {}
+    })();
+  }, [threadId]);
+
+  useEffect(() => {
+    if (!selectedChannelId) { setThreads([]); setSelectedThread(""); return; }
+    (async () => {
+      try {
+        const list = await chatApi.getThreadsByChannel(Number(selectedChannelId));
+        setThreads(list || []);
       } catch {
-        // 실패 시 무시 (입력 비활성 상태로 머무름)
+        setThreads([]);
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId]);
+  }, [selectedChannelId]);
+
+  if (!threadId) {
+    return (
+      <Flex p={4} m={0} w="100vw" h="100vh" overflow="hidden" direction="column" align="center" justify="center" gap={4}>
+        <Text fontSize="lg" fontWeight="bold">대화 스레드를 선택하세요</Text>
+        <Flex direction="column" gap={3} minW="320px">
+          <Box>
+            <Text fontSize="sm" mb={1}>채널</Text>
+            <Box as="select" onChange={(e: any) => setSelectedChannelId(e.target.value ? Number(e.target.value) : "")}
+              borderWidth="1px" borderColor="gray.200" rounded="md" px={3} py={2} w="100%" data-value={selectedChannelId as any}>
+              <option value="">채널 선택</option>
+              {channels.map((ch) => (
+                <option key={ch.id} value={ch.id}>{ch.cmsName || ch.cmsCode}</option>
+              ))}
+            </Box>
+          </Box>
+          <Box>
+            <Text fontSize="sm" mb={1}>스레드</Text>
+            <Box as="select" onChange={(e: any) => setSelectedThread(e.target.value ? Number(e.target.value) : "")}
+              borderWidth="1px" borderColor="gray.200" rounded="md" px={3} py={2} w="100%" data-value={selectedThread as any}
+              opacity={!selectedChannelId ? 0.6 : 1} pointerEvents={!selectedChannelId ? "none" : "auto"}>
+              <option value="">스레드 선택</option>
+              {threads.map((th) => (
+                <option key={th.id} value={th.id}>{th.userName || th.userIdentifier} (#{th.id})</option>
+              ))}
+            </Box>
+          </Box>
+          <Button colorScheme="blue" disabled={!selectedThread} onClick={() => {
+            if (!selectedThread) return;
+            const q = new URLSearchParams(searchParams.toString());
+            q.set("threadId", String(selectedThread));
+            router.replace(`?${q.toString()}`);
+          }}>대화 열기</Button>
+        </Flex>
+      </Flex>
+    );
+  }
 
   return (
     <Box p={0} m={0} w="100vw" h="100vh" overflow="hidden">
