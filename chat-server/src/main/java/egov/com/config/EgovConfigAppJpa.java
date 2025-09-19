@@ -49,13 +49,11 @@ public class EgovConfigAppJpa {
     public LocalContainerEntityManagerFactoryBean entityManagerFactory() {
         LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
         em.setDataSource(dataSource);
+        // NOTE: setPackagesToScan은 와일드카드 패턴을 해석하지 않으므로 루트 패키지로 지정해야 함
         em.setPackagesToScan(
-            "egov.**.domain",
-            "egov.**.entity",
-            "cms.**.domain",
-            "cms.**.entity", 
-            "feature.**.domain",
-            "feature.**.entity"
+            "egov",
+            "cms",
+            "feature"
         );
         
         HibernateJpaVendorAdapter vendorAdapter = new HibernateJpaVendorAdapter();

@@ -37,14 +37,14 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        // 환경변수를 통한 CORS 설정
-        // registry.addMapping("/**")
-        // .allowedOriginPatterns(allowedOrigins)
-        // .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
-        // .allowedHeaders("*")
-        // .allowCredentials(true)
-        // .exposedHeaders("Authorization")
-        // .maxAge(3600);
+        // CORS 설정 활성화 - 프론트엔드(localhost:3000)에서 백엔드(localhost:8080)로의 요청 허용
+        registry.addMapping("/**")
+                .allowedOriginPatterns("http://localhost:3000", "http://127.0.0.1:3000")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+                .allowedHeaders("*")
+                .allowCredentials(true)
+                .exposedHeaders("Authorization")
+                .maxAge(3600);
     }
 
     @Override
