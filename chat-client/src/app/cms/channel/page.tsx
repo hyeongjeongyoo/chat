@@ -5,11 +5,13 @@ import { Box, Flex, Heading, Button, HStack, VStack, Input, Text, Badge, IconBut
 import { GridSection } from "@/components/ui/grid-section";
 import { useColors } from "@/styles/theme";
 import { chatApi } from "@/lib/api/chat";
-import { LuPencil, LuSave, LuTrash2, LuPlus, LuCopy, LuRefreshCw, LuDownload } from "react-icons/lu";
+import { LuPencil, LuSave, LuTrash2, LuPlus, LuCopy, LuRefreshCw, LuDownload, LuMessageCircle } from "react-icons/lu";
 import { toaster } from "@/components/ui/toaster";
+import { useRouter } from "next/navigation";
 
 export default function ChannelManagementPage() {
   const colors = useColors();
+  const router = useRouter();
   const [channels, setChannels] = React.useState<Array<{ id: number; cmsCode: string; cmsName?: string; ownerUserUuid?: string }>>([]);
   const [code, setCode] = React.useState("");
   const [name, setName] = React.useState("");
@@ -322,11 +324,14 @@ export default function ChannelManagementPage() {
                       [created.id]: [newThread]
                     }));
                     
+                    // 환영 메시지가 생성되었음을 알리는 토스트
+                    // 채널 생성 성공 토스트
                     toaster.create({ 
-                      title: "채널과 초기 고객 대화를 생성했습니다.", 
-                      description: `고객: ${newThread.userName || newThread.userIdentifier}`,
+                      title: "채널이 생성되었습니다.", 
+                      description: `채널명: ${created.cmsName || created.cmsCode}`,
                       type: "success" 
                     });
+                    
                   } catch (threadError: any) {
                     toaster.create({ 
                       title: "채널은 생성되었지만 초기 고객 생성에 실패했습니다.", 

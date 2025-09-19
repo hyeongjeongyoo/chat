@@ -4,6 +4,8 @@ import cms.chat.domain.*;
 import cms.chat.repository.ChatChannelRepository;
 import cms.chat.repository.ChatThreadRepository;
 import cms.chat.repository.ChatChannelSettingRepository;
+import cms.chat.repository.ChatChannelCustomerRepository;
+import cms.chat.repository.ChatMessageRepository;
 import cms.chat.service.ChatService;
 import org.springframework.data.domain.Page;
 import cms.common.service.BusinessHoursService;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import javax.validation.constraints.NotBlank;
+import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping({"/chat", "/cms/chat"})
@@ -169,7 +172,10 @@ public class ChatController {
                         dto.setEdited(false);
                     }
                 } catch (Exception ignore) {
+                    dto.setEdited(false);
                 }
+            } else {
+                dto.setEdited(false);
             }
         } catch (Exception ignore) {
         }
@@ -180,6 +186,8 @@ public class ChatController {
     private final ChatChannelRepository chatChannelRepository;
     private final ChatThreadRepository chatThreadRepository;
     private final ChatChannelSettingRepository chatChannelSettingRepository;
+    private final ChatChannelCustomerRepository chatChannelCustomerRepository;
+    private final ChatMessageRepository chatMessageRepository;
     private final cms.file.repository.FileRepository fileRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final BusinessHoursService businessHoursService;
@@ -188,6 +196,8 @@ public class ChatController {
             ChatChannelRepository chatChannelRepository,
             ChatThreadRepository chatThreadRepository,
             ChatChannelSettingRepository chatChannelSettingRepository,
+            ChatChannelCustomerRepository chatChannelCustomerRepository,
+            ChatMessageRepository chatMessageRepository,
             cms.file.repository.FileRepository fileRepository,
             SimpMessagingTemplate messagingTemplate,
             BusinessHoursService businessHoursService) {
@@ -195,6 +205,8 @@ public class ChatController {
         this.chatChannelRepository = chatChannelRepository;
         this.chatThreadRepository = chatThreadRepository;
         this.chatChannelSettingRepository = chatChannelSettingRepository;
+        this.chatChannelCustomerRepository = chatChannelCustomerRepository;
+        this.chatMessageRepository = chatMessageRepository;
         this.fileRepository = fileRepository;
         this.messagingTemplate = messagingTemplate;
         this.businessHoursService = businessHoursService;
@@ -203,10 +215,40 @@ public class ChatController {
     // 목록 조회: 채널 전체
     @GetMapping("/channels")
     public ResponseEntity<?> listChannels(@RequestParam(value = "ownerUserUuid", required = false) String ownerUserUuid) {
+        java.util.List<ChatChannel> channels;
         if (ownerUserUuid != null && !ownerUserUuid.isEmpty()) {
-            return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(chatChannelRepository.findByOwnerUserUuid(ownerUserUuid), "ok"));
+            channels = chatChannelRepository.findByOwnerUserUuid(ownerUserUuid);
+        } else {
+            channels = chatChannelRepository.findAll();
         }
-        return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(chatChannelRepository.findAll(), "ok"));
+        
+        // 각 채널별 미읽은 메시지 개수 계산
+        java.util.List<java.util.Map<String, Object>> channelList = new java.util.ArrayList<>();
+        for (ChatChannel channel : channels) {
+            java.util.Map<String, Object> channelInfo = new java.util.HashMap<>();
+            channelInfo.put("id", channel.getId());
+            channelInfo.put("cmsCode", channel.getCmsCode());
+            channelInfo.put("cmsName", channel.getCmsName());
+            channelInfo.put("ownerUserUuid", channel.getOwnerUserUuid());
+            channelInfo.put("createdAt", channel.getCreatedAt());
+            channelInfo.put("updatedAt", channel.getUpdatedAt());
+            
+            // 해당 채널의 모든 스레드에서 미읽은 메시지 개수 계산 (USER 메시지만)
+            java.util.List<ChatThread> threads = chatThreadRepository.findByChannelOrderByUpdatedAtDesc(channel);
+            int totalUnreadCount = 0;
+            if (!threads.isEmpty()) {
+                java.util.List<Object[]> unreadCounts = chatMessageRepository.countUnreadMessagesByThreads(threads);
+                for (Object[] result : unreadCounts) {
+                    Long count = (Long) result[1];
+                    totalUnreadCount += count.intValue();
+                }
+            }
+            channelInfo.put("unreadCount", totalUnreadCount);
+            
+            channelList.add(channelInfo);
+        }
+        
+        return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(channelList, "ok"));
     }
 
     // 목록 조회: 채널별 스레드
@@ -214,7 +256,39 @@ public class ChatController {
     public ResponseEntity<?> listThreads(@PathVariable Long channelId) {
         ChatChannel channel = chatChannelRepository.findById(channelId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found"));
-        return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(chatThreadRepository.findByChannelOrderByUpdatedAtDesc(channel), "ok"));
+        
+        java.util.List<ChatThread> threads = chatThreadRepository.findByChannelOrderByUpdatedAtDesc(channel);
+        
+        // 배치로 모든 스레드의 미읽은 메시지 개수 계산 (USER 메시지만)
+        java.util.Map<Long, Integer> unreadCountMap = new java.util.HashMap<>();
+        if (!threads.isEmpty()) {
+            java.util.List<Object[]> unreadCounts = chatMessageRepository.countUnreadMessagesByThreads(threads);
+            for (Object[] result : unreadCounts) {
+                Long threadId = (Long) result[0];
+                Long count = (Long) result[1];
+                unreadCountMap.put(threadId, count.intValue());
+            }
+        }
+        
+        // 스레드 정보 구성
+        java.util.List<java.util.Map<String, Object>> threadList = new java.util.ArrayList<>();
+        for (ChatThread thread : threads) {
+            java.util.Map<String, Object> threadInfo = new java.util.HashMap<>();
+            threadInfo.put("id", thread.getId());
+            threadInfo.put("channelId", thread.getChannel().getId());
+            threadInfo.put("userIdentifier", thread.getUserIdentifier());
+            threadInfo.put("userName", thread.getUserName());
+            threadInfo.put("createdAt", thread.getCreatedAt());
+            threadInfo.put("updatedAt", thread.getUpdatedAt());
+            
+            // 배치로 계산된 unreadCount 사용 (없으면 0)
+            int unreadCount = unreadCountMap.getOrDefault(thread.getId(), 0);
+            threadInfo.put("unreadCount", unreadCount);
+            
+            threadList.add(threadInfo);
+        }
+        
+        return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(threadList, "ok"));
     }
 
     @PatchMapping("/channels/{channelId}")
@@ -249,12 +323,9 @@ public class ChatController {
 
         if (threads != null && !threads.isEmpty()) {
             if (force) {
-                // 강제 삭제: 스레드를 먼저 삭제한 후 채널 삭제
-                for (ChatThread thread : threads) {
-                    chatThreadRepository.delete(thread);
-                }
+                // 강제 삭제: CASCADE DELETE로 관련 데이터가 자동 삭제되므로 채널만 삭제
                 chatChannelRepository.delete(channel);
-                return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(true, "Channel and associated threads deleted"));
+                return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(true, "Channel and associated data deleted"));
             } else {
                 // 스레드 목록과 함께 409 응답
                 java.util.List<java.util.Map<String, Object>> threadList = new java.util.ArrayList<>();
@@ -278,7 +349,7 @@ public class ChatController {
             }
         }
 
-        // 스레드가 없으면 정상 삭제
+        // 스레드가 없으면 정상 삭제 (CASCADE DELETE로 관련 데이터 자동 삭제)
         chatChannelRepository.delete(channel);
         return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(true, "Channel deleted"));
     }
@@ -341,6 +412,21 @@ public class ChatController {
             ChatChannel channel = chatChannelRepository.findById(channelId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found"));
             ChatThread thread = chatService.getOrCreateThread(channel, userIdentifier, userName, userIp, actor);
+            
+            // chat_channel_customer 테이블에도 고객 정보 저장 (임시 비활성화)
+            // try {
+            //     ChatChannelCustomer existingCustomer = chatChannelCustomerRepository.findByChannelIdAndUserUuid(channelId, userIdentifier).orElse(null);
+            //     if (existingCustomer == null) {
+            //         ChatChannelCustomer customer = ChatChannelCustomer.create(channelId, userIdentifier, userName);
+            //         chatChannelCustomerRepository.save(customer);
+            //         System.out.println("ChatChannelCustomer 저장 완료: channelId=" + channelId + ", userUuid=" + userIdentifier);
+            //     }
+            // } catch (Exception e) {
+            //     // 고객 정보 저장 실패는 무시 (스레드는 이미 생성됨)
+            //     System.err.println("ChatChannelCustomer 저장 실패: " + e.getMessage());
+            //     e.printStackTrace();
+            // }
+            
             return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(thread, "ok"));
         } catch (DataIntegrityViolationException ex) {
             ChatChannel channel = chatChannelRepository.findById(channelId)
@@ -353,6 +439,22 @@ public class ChatController {
                     .body(cms.common.dto.ApiResponseSchema.error("Failed to create thread: " + e.getMessage(), "INTERNAL_SERVER_ERR"));
         }
     }
+    
+    @PostMapping("/threads/{threadId}/welcome")
+    public ResponseEntity<?> createWelcomeMessage(@PathVariable Long threadId,
+            @RequestParam(defaultValue = "system") String actor) {
+        try {
+            ChatThread thread = chatThreadRepository.findById(threadId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread not found"));
+            
+            chatService.createWelcomeMessage(thread, actor);
+            
+            return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success("Welcome message created", "ok"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(cms.common.dto.ApiResponseSchema.error("Failed to create welcome message: " + e.getMessage(), "INTERNAL_SERVER_ERR"));
+        }
+    }
 
     @DeleteMapping("/threads/{threadId}")
     public ResponseEntity<?> deleteThread(@PathVariable Long threadId,
@@ -360,6 +462,13 @@ public class ChatController {
         try {
             ChatThread thread = chatThreadRepository.findById(threadId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread not found"));
+
+            // chat_channel_customer 테이블에서도 고객 정보 삭제
+            try {
+                chatChannelCustomerRepository.deleteByChannelIdAndUserUuid(thread.getChannel().getId(), thread.getUserIdentifier());
+            } catch (Exception ignore) {
+                // 고객 정보 삭제 실패는 무시
+            }
 
             // 스레드와 관련된 모든 메시지도 함께 삭제 (CASCADE)
             chatThreadRepository.delete(thread);
@@ -602,7 +711,14 @@ public class ChatController {
             @RequestParam(defaultValue = "system") String actor) {
         ChatThread thread = chatThreadRepository.findById(threadId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread not found"));
-        chatService.markMessagesAsRead(thread, java.time.LocalDateTime.now(), actor);
+        
+        LocalDateTime now = java.time.LocalDateTime.now();
+        chatService.markMessagesAsRead(thread, now, actor);
+        
+        // 스레드의 마지막 읽은 시간 업데이트
+        thread.setLastReadAt(now);
+        chatThreadRepository.save(thread);
+        
         return ResponseEntity.ok().build();
     }
 

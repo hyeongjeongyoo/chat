@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useLayoutEffect } from "react";
-import { Box, Flex, Text, Icon, Input, Button, Badge, IconButton, Image, Link } from "@chakra-ui/react";
+import { Box, Flex, Text, Icon, Input, Button, Badge, IconButton, Image, Link, Drawer, Portal } from "@chakra-ui/react";
 import { LuSend, LuPaperclip, LuPencil, LuTrash2, LuCheck, LuRotateCcw, LuDownload, LuFile } from "react-icons/lu";
 import { useChatMessages } from "../../hooks/useChat";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -43,6 +43,10 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
 
   const [bizOpen, setBizOpen] = useState<boolean | null>(null);
   const [bizMsg, setBizMsg] = useState<string>("");
+  
+  // 이미지 미리보기 상태
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
   useEffect(() => {
     (async () => {
       try {
@@ -60,13 +64,15 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
     const arr = (pages as any[])?.flatMap((p: any) => p.content as ChatMessageDto[]) ?? [];
     for (const m of arr) {
       if (!m) continue;
-      if (m.id != null) {
-        flat[m.id] = m; // ID 기준 병합/교체
+      // 초기 로딩 시 서버 edited 오판 방지: 기본값을 false로 정규화
+      const normalized = { ...m, edited: false } as ChatMessageDto;
+      if ((m as any)?.id != null) {
+        flat[(m as any).id as number] = normalized; // ID 기준 병합/교체
       } else {
         // id가 없으면 content+createdAt 키로 임시 보존
-        const key = (m.content || "") + (m.createdAt || "");
+        const key = (m as any).content || "" + ((m as any).createdAt || "");
         // @ts-ignore
-        flat[key as any] = m;
+        flat[key as any] = normalized;
       }
     }
     return Object.values(flat);
@@ -151,11 +157,11 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
               const idx = list.findIndex((x) => x.id === msg.id);
               if (idx >= 0) {
                 // 수정: 교체
-                const replaced = list.map((x) => (x.id === msg.id ? ({ ...x, ...msg, edited: (msg as any).edited ?? (x as any).edited }) : x));
+                const replaced = list.map((x) => (x.id === msg.id ? ({ ...x, ...msg, edited: false }) : x));
                 return { ...p, content: replaced };
               }
               // 추가: 마지막에 붙임(서버 정렬이 ASC이므로 최신이 뒤에 위치)
-              return { ...p, content: [...list, { ...msg, edited: (msg as any).edited ?? false }] };
+              return { ...p, content: [...list, { ...msg, edited: false }] };
             });
             return { ...old, pages: newPages };
           }
@@ -555,6 +561,14 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
                       maxH="220px"
                       objectFit="contain"
                       rounded="md"
+                      cursor="pointer"
+                      onClick={() => {
+                        setSelectedImage({
+                          src: String(imageSrc || ''),
+                          alt: String((message as any).fileName || "image")
+                        });
+                        setIsImageModalOpen(true);
+                      }}
                       borderWidth="0"
                       display="block"
                     />
@@ -751,6 +765,48 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
         confirmText="삭제"
         cancelText="취소"
       />
+
+      {/* 이미지 미리보기 Drawer */}
+      <Drawer.Root open={isImageModalOpen} onOpenChange={(e) => { if (!e.open) setIsImageModalOpen(false); }} size="md">
+        <Portal>
+          <Drawer.Backdrop />
+          <Drawer.Positioner>
+            <Drawer.Content>
+              {/* 좌측 상단 닫기 트리거 (>> 버튼) */}
+              <Drawer.CloseTrigger asChild>
+                <Button
+                  position="absolute"
+                  top={4}
+                  left={4}
+                  size="xs"
+                  variant="subtle"
+                >
+                  {">>"}
+                </Button>
+              </Drawer.CloseTrigger>
+              <Drawer.Header>
+                <Text fontWeight="bold" fontSize="md" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                  {selectedImage?.alt}
+                </Text>
+              </Drawer.Header>
+              <Drawer.Body>
+                {selectedImage && (
+                  <Box display="flex" justifyContent="center" alignItems="center" minH="400px">
+                    <Image
+                      src={selectedImage.src}
+                      alt={selectedImage.alt}
+                      maxW="100%"
+                      maxH="80vh"
+                      objectFit="contain"
+                      borderRadius="md"
+                    />
+                  </Box>
+                )}
+              </Drawer.Body>
+            </Drawer.Content>
+          </Drawer.Positioner>
+        </Portal>
+      </Drawer.Root>
     </Flex>
   );
 };

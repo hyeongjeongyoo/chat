@@ -12,14 +12,46 @@ export default function ChatPopupPage() {
   const router = useRouter();
 
   const { threadId, token, uuid } = useMemo(() => {
+    if (typeof window === "undefined") {
+      return { threadId: null, token: null, uuid: null };
+    }
+    
+    // URL 파라미터에서 값을 가져오기
     const tidStr = searchParams.get("threadId");
     const tokenStr = searchParams.get("token");
     const uuidStr = searchParams.get("uuid");
-    const tid = tidStr ? Number(tidStr) : null;
+    
+    // URL에 파라미터가 있으면 세션 스토리지에 저장하고 URL에서 제거
+    if (tidStr || tokenStr || uuidStr) {
+      if (tidStr) sessionStorage.setItem('popup_threadId', tidStr);
+      if (tokenStr) sessionStorage.setItem('popup_token', tokenStr);
+      if (uuidStr) sessionStorage.setItem('popup_uuid', uuidStr);
+      
+      // URL에서 파라미터 제거
+      const url = new URL(window.location.href);
+      url.searchParams.delete('threadId');
+      url.searchParams.delete('token');
+      url.searchParams.delete('uuid');
+      window.history.replaceState({}, '', url.toString());
+      
+      const tid = tidStr ? Number(tidStr) : null;
+      return { 
+        threadId: Number.isFinite(tid as number) ? (tid as number) : null, 
+        token: tokenStr,
+        uuid: uuidStr
+      };
+    }
+    
+    // URL에 파라미터가 없으면 세션 스토리지에서 가져오기
+    const storedThreadId = sessionStorage.getItem('popup_threadId');
+    const storedToken = sessionStorage.getItem('popup_token');
+    const storedUuid = sessionStorage.getItem('popup_uuid');
+    
+    const tid = storedThreadId ? Number(storedThreadId) : null;
     return { 
       threadId: Number.isFinite(tid as number) ? (tid as number) : null, 
-      token: tokenStr,
-      uuid: uuidStr
+      token: storedToken,
+      uuid: storedUuid
     };
   }, [searchParams]);
 

@@ -13,3 +13,4 @@ public interface ChatChannelSettingRepository extends JpaRepository<ChatChannelS
 
     void deleteByChannelId(Long channelId);
 }
+

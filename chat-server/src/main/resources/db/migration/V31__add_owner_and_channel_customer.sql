@@ -30,3 +30,4 @@ CREATE INDEX IF NOT EXISTS idx_chat_channel_customer_channel ON chat_channel_cus
 
 CREATE INDEX IF NOT EXISTS idx_chat_channel_customer_user ON chat_channel_customer (user_uuid);
 
+

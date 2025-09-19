@@ -1,11 +1,12 @@
 "use client";
 
-import { Box, Button, Text } from "@chakra-ui/react";
+import { Box, Button, Text, Badge } from "@chakra-ui/react";
 import { useColorMode } from "@/components/ui/color-mode";
 import { Tooltip } from "@/components/ui/tooltip";
 import Link from "next/link";
 import { useColors } from "@/styles/theme";
 import { IconType } from "react-icons";
+import { useChatNotification } from "@/contexts/ChatNotificationContext";
 
 interface SidebarMenuItemProps {
   isSidebarOpen: boolean;
@@ -25,6 +26,10 @@ export function SidebarMenuItem({
   const colors = useColors();
   const { colorMode } = useColorMode();
   const isDark = colorMode === "dark";
+  const { totalUnreadCount } = useChatNotification();
+  
+  // 채팅관리 메뉴에만 뱃지 표시 (0일 때는 표시하지 않음)
+  const showBadge = item.path === "/cms/chat" && (totalUnreadCount ?? 0) > 0;
 
   return (
     <Link
@@ -118,6 +123,23 @@ export function SidebarMenuItem({
           >
             {item.label}
           </Text>
+          {showBadge && (
+            <Badge
+              bg="red.500"
+              color="white"
+              borderRadius="full"
+              px={2}
+              py={1}
+              fontSize="10px"
+              fontWeight="bold"
+              minW="18px"
+              textAlign="center"
+              ml="auto"
+              mr={isSidebarOpen ? 2 : 0}
+            >
+              {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
+            </Badge>
+          )}
         </Button>
       </Tooltip>
     </Link>

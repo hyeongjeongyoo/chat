@@ -1,25 +1,49 @@
 "use client";
 
 import React from "react";
-import { Box, Flex, Heading, Badge, Text, VStack, HStack, Button, Input, IconButton } from "@chakra-ui/react";
+import { Box, Flex, Heading, Badge, Text, VStack, HStack, Button, Input, IconButton, Image, Drawer, Portal } from "@chakra-ui/react";
 import { toaster } from "@/components/ui/toaster";
 import { GridSection } from "@/components/ui/grid-section";
 import { useColors } from "@/styles/theme";
-import { LuPencil, LuTrash2, LuCheck, LuUndo2, LuPaperclip, LuFile, LuX, LuDownload, LuImage } from "react-icons/lu";
+import { LuPencil, LuTrash2, LuCheck, LuUndo2, LuPaperclip, LuFile, LuX, LuDownload, LuImage, LuChevronRight } from "react-icons/lu";
 import { chatApi } from "@/lib/api/chat";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { fileApi, type UploadedFileDto } from "@/lib/api/file";
 import { ChatStompClient } from "@/lib/ws/chatSocket";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useChatNotification } from "@/contexts/ChatNotificationContext";
 
 export default function ChatAdminPage() {
   const colors = useColors();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { updateTotalUnreadCount, resetTotalUnreadCount } = useChatNotification();
   // 페이지 루트에서는 별도 동작 없음. threadId 파라미터 처리는 MessagesPanel 내부에서 수행
+  
+  // 채팅관리 페이지 진입 시 전체 뱃지 초기화
+  React.useEffect(() => {
+    resetTotalUnreadCount();
+  }, [resetTotalUnreadCount]);
 
   const [selectedChannelId, setSelectedChannelId] = React.useState<number>(1);
   const [selectedThreadId, setSelectedThreadId] = React.useState<number>(0);
+  const channelsPanelRef = React.useRef<{ refreshChannels: () => void }>(null);
+  
+  // URL 파라미터에서 채널 ID 읽기
+  React.useEffect(() => {
+    const channelIdParam = searchParams.get("channelId");
+    if (channelIdParam) {
+      const channelId = Number(channelIdParam);
+      if (!isNaN(channelId)) {
+        setSelectedChannelId(channelId);
+      }
+    }
+  }, [searchParams]);
+  
+  // 현재 대화 상태 추적
+  const [currentChannelName, setCurrentChannelName] = React.useState<string>("");
+  const [currentThreadName, setCurrentThreadName] = React.useState<string>("");
+  const [threadsRefreshTrigger, setThreadsRefreshTrigger] = React.useState<number>(0);
 
   const layout = [
     { id: "header", x: 0, y: 0, w: 12, h: 1, isStatic: true, isHeader: true },
@@ -56,11 +80,38 @@ export default function ChatAdminPage() {
 
         {/* Channels */}
         <ChannelsPanel
+          ref={channelsPanelRef}
           colors={colors}
           selectedChannelId={selectedChannelId}
-          onSelectChannel={(id) => {
+          onSelectChannel={async (id, channelName) => {
             // 채널만 변경. threadId는 ThreadsPanel에서 백엔드 목록 기준으로 결정
             setSelectedChannelId(id);
+            setCurrentChannelName(channelName);
+            
+            // URL에 채널 ID 추가
+            const current = new URLSearchParams(searchParams.toString());
+            current.set("channelId", String(id));
+            router.replace(`?${current.toString()}`);
+            
+            // 채널 선택 시 해당 채널의 뱃지 초기화
+            try {
+              // 해당 채널의 모든 스레드 조회
+              const threads = await chatApi.getThreadsByChannel(id);
+              if (threads && threads.length > 0) {
+                // 각 스레드를 읽음 처리 (병렬 처리로 성능 개선)
+                const markReadPromises = threads.map(thread => 
+                  chatApi.markRead(thread.id, "admin").catch(() => {})
+                );
+                await Promise.all(markReadPromises);
+              }
+            } catch (error) {
+              console.error("채널 뱃지 초기화 실패:", error);
+            }
+            
+            // 채널 목록 새로고침하여 뱃지 업데이트
+            channelsPanelRef.current?.refreshChannels();
+            // 스레드 목록도 새로고침
+            setThreadsRefreshTrigger(prev => prev + 1);
           }}
         />
 
@@ -69,17 +120,35 @@ export default function ChatAdminPage() {
           colors={colors}
           selectedChannelId={selectedChannelId}
           selectedThreadId={selectedThreadId}
-          onSelectThread={(id) => {
+          onSelectThread={(id, threadName) => {
             setSelectedThreadId(id);
-            // 스레드 선택만 URL 동기화: threadId 단일 소스
-            const current = new URLSearchParams();
+            setCurrentThreadName(threadName);
+            // 스레드 선택 시 URL 동기화: channelId와 threadId 모두 유지
+            const current = new URLSearchParams(searchParams.toString());
             current.set("threadId", String(id));
             router.replace(`?${current.toString()}`);
           }}
+          onThreadRead={(threadId) => {
+            // 스레드 읽음 처리 - 백엔드 API 호출
+            chatApi.markRead(threadId, "admin").then(() => {
+              // 읽음 처리 후 스레드 목록 새로고침
+              setThreadsRefreshTrigger(prev => prev + 1);
+            }).catch(() => {});
+          }}
+          refreshTrigger={threadsRefreshTrigger}
         />
 
         {/* Messages */}
-        <MessagesPanel colors={colors} selectedThreadId={selectedThreadId} />
+        <MessagesPanel
+          colors={colors}
+          selectedThreadId={selectedThreadId}
+          selectedChannelId={selectedChannelId}
+          currentChannelName={currentChannelName}
+          currentThreadName={currentThreadName}
+          channelsPanelRef={channelsPanelRef}
+          onThreadsRefresh={() => setThreadsRefreshTrigger(prev => prev + 1)}
+          onTabChange={() => setThreadsRefreshTrigger(prev => prev + 1)}
+        />
 
         {/* 상세/설정 섹션 제거됨 */}
       </GridSection>
@@ -107,23 +176,41 @@ type PanelProps = { colors: Colors };
 
 type ChannelsPanelProps = PanelProps & {
   selectedChannelId: number;
-  onSelectChannel: (id: number) => void;
+  onSelectChannel: (id: number, channelName: string) => void;
 };
 
-function ChannelsPanel({ colors, selectedChannelId, onSelectChannel }: ChannelsPanelProps) {
-  const [channels, setChannels] = React.useState<Array<{ id: number; cmsCode: string; cmsName?: string }>>([]);
+const ChannelsPanel = React.forwardRef<{ refreshChannels: () => void }, ChannelsPanelProps>(({ colors, selectedChannelId, onSelectChannel }, ref) => {
+  const [channels, setChannels] = React.useState<Array<{ id: number; cmsCode: string; cmsName?: string; unreadCount?: number }>>([]);
+  const { updateTotalUnreadCount } = useChatNotification();
+
+  const refreshChannels = React.useCallback(async () => {
+    try {
+      const list = await chatApi.getChannels();
+      setChannels(list || []);
+      
+      // 전체 미읽은 메시지 수 계산
+      const totalUnread = (list || []).reduce((sum, channel) => sum + (channel.unreadCount || 0), 0);
+      updateTotalUnreadCount(totalUnread);
+    } catch {}
+  }, [updateTotalUnreadCount]);
+
+  // 주기적으로 뱃지 업데이트 (5초마다) - 적절한 반응성
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      refreshChannels();
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [refreshChannels]);
 
   React.useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const list = await chatApi.getChannels();
-        if (!mounted) return;
-        setChannels(list || []);
-      } catch {}
-    })();
-    return () => { mounted = false; };
-  }, []);
+    refreshChannels();
+  }, [refreshChannels]);
+
+  // ref를 통해 refreshChannels 함수 노출
+  React.useImperativeHandle(ref, () => ({
+    refreshChannels
+  }), [refreshChannels]);
 
   return (
     <VStack align="stretch" gap={2} px={2}>
@@ -136,26 +223,47 @@ function ChannelsPanel({ colors, selectedChannelId, onSelectChannel }: ChannelsP
           bg={selectedChannelId === ch.id ? "gray.100" : "transparent"}
           _hover={{ bg: "gray.100" }}
           cursor="pointer"
-          onClick={() => onSelectChannel(ch.id)}
+          onClick={() => onSelectChannel(ch.id, ch.cmsName || ch.cmsCode)}
         >
-          <Text fontWeight="bold">{ch.cmsName || ch.cmsCode}</Text>
-        <Text fontSize="xs" color={colors.text.muted}>code: {ch.cmsCode}</Text>
+          <HStack justify="space-between" align="center">
+            <VStack align="start" gap={0} flex={1}>
+              <Text fontWeight="bold">{ch.cmsName || ch.cmsCode}</Text>
+              <Text fontSize="xs" color={colors.text.muted}>code: {ch.cmsCode}</Text>
+            </VStack>
+            {(ch.unreadCount ?? 0) > 0 && (
+              <Badge
+                bg="red.500"
+                color="white"
+                borderRadius="full"
+                px={2}
+                py={1}
+                fontSize="xs"
+                fontWeight="bold"
+                minW="20px"
+                textAlign="center"
+              >
+                {(ch.unreadCount ?? 0) > 99 ? "99+" : (ch.unreadCount ?? 0)}
+              </Badge>
+            )}
+          </HStack>
         </Box>
       ))}
     </VStack>
   );
-}
+});
 
 type ThreadsPanelProps = PanelProps & {
   selectedChannelId: number;
   selectedThreadId: number;
-  onSelectThread: (id: number) => void;
+  onSelectThread: (id: number, threadName: string) => void;
+  onThreadRead: (threadId: number) => void;
+  refreshTrigger?: number; // 뱃지 새로고침 트리거
 };
 
-function ThreadsPanel({ colors, selectedChannelId, selectedThreadId, onSelectThread }: ThreadsPanelProps) {
+function ThreadsPanel({ colors, selectedChannelId, selectedThreadId, onSelectThread, onThreadRead, refreshTrigger }: ThreadsPanelProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [threads, setThreads] = React.useState<Array<{ id: number; channelId: number; userIdentifier: string; userName?: string }>>([]);
+  const [threads, setThreads] = React.useState<Array<{ id: number; channelId: number; userIdentifier: string; userName?: string; unreadCount?: number }>>([]);
 
   React.useEffect(() => {
     let mounted = true;
@@ -170,20 +278,20 @@ function ThreadsPanel({ colors, selectedChannelId, selectedThreadId, onSelectThr
         const ids = new Set((list || []).map(t => t.id));
         if (urlTid) {
           if (ids.has(urlTid)) {
-            onSelectThread(urlTid);
+            onSelectThread(urlTid, "");
           } else if ((list || []).length > 0) {
             // 현재 채널에 해당 threadId가 없으면 첫 스레드로 전환
             const first = list[0].id;
-            onSelectThread(first);
-            const params = new URLSearchParams();
+            onSelectThread(first, list[0].userName || list[0].userIdentifier);
+            const params = new URLSearchParams(searchParams.toString());
             params.set("threadId", String(first));
             router.replace(`?${params.toString()}`);
           }
         } else if ((list || []).length > 0) {
           // URL에 threadId가 전혀 없을 때만 첫 스레드로 초기화
           const first = list[0].id;
-          onSelectThread(first);
-          const params = new URLSearchParams();
+          onSelectThread(first, list[0].userName || list[0].userIdentifier);
+          const params = new URLSearchParams(searchParams.toString());
           params.set("threadId", String(first));
           router.replace(`?${params.toString()}`);
         }
@@ -193,6 +301,32 @@ function ThreadsPanel({ colors, selectedChannelId, selectedThreadId, onSelectThr
     })();
     return () => { mounted = false; };
   }, [selectedChannelId, router, searchParams, onSelectThread]);
+
+  // refreshTrigger가 변경될 때 스레드 목록 새로고침
+  React.useEffect(() => {
+    if (refreshTrigger && selectedChannelId) {
+      (async () => {
+        try {
+          const list = await chatApi.getThreadsByChannel(selectedChannelId);
+          setThreads(list || []);
+        } catch {}
+      })();
+    }
+  }, [refreshTrigger, selectedChannelId]);
+
+  // 주기적으로 스레드 목록 새로고침 (5초마다) - 적절한 반응성
+  React.useEffect(() => {
+    if (!selectedChannelId) return;
+    
+    const interval = setInterval(async () => {
+      try {
+        const list = await chatApi.getThreadsByChannel(selectedChannelId);
+        setThreads(list || []);
+      } catch {}
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [selectedChannelId]);
 
   return (
     <VStack align="stretch" gap={2} px={2}>
@@ -208,26 +342,28 @@ function ThreadsPanel({ colors, selectedChannelId, selectedThreadId, onSelectThr
           bg={selectedThreadId === th.id ? "gray.100" : "transparent"}
           _hover={{ bg: "gray.100" }}
           cursor="pointer"
-          onClick={() => onSelectThread(th.id)}
+          onClick={() => {
+            onSelectThread(th.id, th.userName || th.userIdentifier);
+            // 스레드 선택 시 해당 스레드의 뱃지 즉시 초기화 (비동기로 처리)
+            onThreadRead(th.id);
+          }}
         >
           <HStack justify="space-between" align="center">
             <Text fontWeight="medium">{th.userName || th.userIdentifier}</Text>
-            {/* unread 카운트는 추후 API 연결 */}
-            {false && (
-              <Box
-                bg="blue.500"
+            {(th.unreadCount ?? 0) > 0 && (
+              <Badge
+                bg="orange.500"
                 color="white"
                 borderRadius="full"
-                minW="25px"
-                h="25px"
+                px={2}
+                py={1}
                 fontSize="xs"
-                display="inline-flex"
-                alignItems="center"
-                justifyContent="center"
-                p={1}
+                fontWeight="bold"
+                minW="20px"
+                textAlign="center"
               >
-                0
-              </Box>
+                {(th.unreadCount ?? 0) > 99 ? "99+" : (th.unreadCount ?? 0)}
+              </Badge>
             )}
           </HStack>
           {/* 최근 시간 표시: 추후 API 필드 연결 */}
@@ -238,9 +374,18 @@ function ThreadsPanel({ colors, selectedChannelId, selectedThreadId, onSelectThr
   );
 }
 
-type MessagesPanelProps = PanelProps & { selectedThreadId: number };
+type MessagesPanelProps = PanelProps & { 
+  selectedThreadId: number;
+  selectedChannelId: number;
+  currentChannelName: string;
+  currentThreadName: string;
+  channelsPanelRef: React.RefObject<{ refreshChannels: () => void }>;
+  onThreadsRefresh: () => void;
+  onTabChange: () => void; // 탭 변경 시 뱃지 초기화를 위한 콜백
+};
 
-function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
+function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentChannelName, currentThreadName, channelsPanelRef, onThreadsRefresh, onTabChange }: MessagesPanelProps) {
+  const { updateTotalUnreadCount, incrementTotalUnreadCount } = useChatNotification();
   const searchParams = useSearchParams();
   const threadIdParam = searchParams.get("threadId");
   const explicitBackendThreadId = threadIdParam ? Number(threadIdParam) : null;
@@ -259,6 +404,21 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
   const [bizOpen, setBizOpen] = React.useState<boolean | null>(null);
   const [bizMsg, setBizMsg] = React.useState<string>("");
   const userScrolledRef = React.useRef<boolean>(false);
+  
+  // 이미지 미리보기 상태
+  const [isImageModalOpen, setIsImageModalOpen] = React.useState(false);
+  const [selectedImage, setSelectedImage] = React.useState<{ src: string; alt: string } | null>(null);
+  // Drawer 마운트/오픈 상태로 슬라이드 애니메이션 유지
+  const [isDrawerMounted, setIsDrawerMounted] = React.useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
+
+  // 컴포넌트 언마운트 시 스크롤 복원
+  React.useEffect(() => {
+    return () => {
+      document.body.style.overflow = 'auto';
+    };
+  }, []);
+  
   const autoScrollRef = React.useRef<boolean>(true);
   const didInitScrollRef = React.useRef<boolean>(false);
   // 로딩 전 하단으로부터의 오프셋(뷰포트 하단 기준)
@@ -270,7 +430,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
   const [imageLoadedMap, setImageLoadedMap] = React.useState<Record<number, boolean>>({});
   // 최근 업로드한 파일명 -> 다운로드 URL 매핑 (즉시 활성화용)
   const lastUploadedMapRef = React.useRef<Map<string, string>>(new Map());
-  const [threadFiles, setThreadFiles] = React.useState<Array<{ fileId: number; originName: string; mimeType: string; createdDate?: string }>>([]);
+  const [threadFiles, setThreadFiles] = React.useState<Array<{ fileId: string; originName: string; mimeType: string; createdDate?: string }>>([]);
   const lastSentRef = React.useRef<{ content: string; at: number } | null>(null);
   // 최근 수신 이벤트 키(중복 방지: 일시적 이중 브로드캐스트/이중 구독 대응)
   const recentEventKeysRef = React.useRef<Map<string, number>>(new Map());
@@ -332,6 +492,12 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
               // 일부 WS 브로드캐스트는 threadId가 포함되지 않음 → 구독 경로가 스레드별이므로 허용
               const matches = (m as any).threadId ? ((m as any).threadId === threadId || (m as any).threadId === selectedThreadId) : true;
               if (!matches) return;
+              
+              // 메시지 발신자 확인
+              const messageSender = (m as any).senderType === "ADMIN" ? "ADMIN" : "USER";
+              
+              // 실시간 수신으로 직접 반영하므로 여기서는 refetch하지 않음 (중복 방지)
+              
               // 0) 중복 이벤트 드롭: 같은 payload가 짧은 시간(3초) 내에 반복되면 무시
               try {
                 const k = [
@@ -411,15 +577,89 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
               if (listRef.current) {
                 listRef.current.scrollTop = listRef.current.scrollHeight;
               }
-              // 파일 탭에 있을 때 새 메시지 도착 알림 및 배지 증가
-              if (activeTabRef.current !== "chat") {
-                setNewMsgCount((v) => v + 1);
-                try { toaster.create({ title: "새 메시지가 도착했습니다.", type: "info" }); } catch {}
+              
+              // 알림 및 뱃지 로직 - USER 메시지만 처리 (ADMIN 메시지는 뱃지/토스트 없음)
+              const messageThreadId = (m as any).threadId;
+              const messageUserName = (m as any).userName || (m as any).userIdentifier || "알 수 없는 사용자";
+              
+              // ADMIN이 보낸 메시지는 뱃지나 토스트 표시하지 않음
+              if (messageSender === "ADMIN") {
+                return;
               }
+              
+              // USER 메시지에 대한 알림 및 뱃지 로직
+                const isCurrentPage = window.location.pathname === "/cms/chat";
+                const isCurrentThread = messageThreadId === threadId;
+                const isChatTab = activeTabRef.current === "chat";
+                
+                // 현재 스레드에서 메시지 수신 시 읽음 처리 (채팅 탭에 있을 때만)
+                if (isCurrentThread && isChatTab) {
+                  // 즉시 읽음 처리
+                  chatApi.markRead(messageThreadId, "admin").then(() => {
+                    // 읽음 처리 후 뱃지 업데이트
+                    if (channelsPanelRef.current) {
+                      channelsPanelRef.current.refreshChannels();
+                    }
+                    onThreadsRefresh();
+                  }).catch(() => {});
+                }
+                
+                // 1. 같은 채널 같은 대화에서 메시지가 온다면 알림, 토스트 필요없음
+                if (isCurrentPage && isCurrentThread && isChatTab) {
+                  // 아무것도 하지 않음 (알림 없음)
+                }
+                // 2. 같은 채널 같은 대화 탭 첨부파일에 있을 경우 대화 탭에 뱃지, 토스트 띄워줘
+                else if (isCurrentPage && isCurrentThread && !isChatTab) {
+                  setNewMsgCount((v) => v + 1);
+                  try { 
+                    toaster.create({ 
+                      title: "새 메시지가 도착했습니다.", 
+                      type: "info",
+                      description: `${currentThreadName}님의 새 메시지`
+                    }); 
+                  } catch {}
+                }
+                // 3. 같은 채널 다른 상대와 대화 중이라면 채널에 뱃지, 누가 보냈는지 토스트 띄워줘
+                else if (isCurrentPage && !isCurrentThread) {
+                  // 채널 뱃지 업데이트 (즉시)
+                  if (channelsPanelRef.current) {
+                    channelsPanelRef.current.refreshChannels();
+                  }
+                  // 스레드 뱃지 업데이트 (즉시)
+                  onThreadsRefresh();
+                  // 전역 뱃지 업데이트
+                  incrementTotalUnreadCount();
+                  // 토스트 표시
+                  try { 
+                    toaster.create({ 
+                      title: `${currentChannelName} - ${messageUserName}님의 새 메시지`, 
+                      type: "info"
+                    }); 
+                  } catch {}
+                }
+                // 4. 다른 메뉴에 가 있다면 (/cms/channel) 에 가 있을 경우 메뉴, 채널에 뱃지, 대화상대에 뱃지와 어떤 채널의 누가 보냈는지 토스트 띄워줘
+                else if (!isCurrentPage) {
+                  // 채널 뱃지 업데이트 (즉시)
+                  if (channelsPanelRef.current) {
+                    channelsPanelRef.current.refreshChannels();
+                  }
+                  // 전역 뱃지 업데이트
+                  incrementTotalUnreadCount();
+                  // 토스트 표시
+                  try { 
+                    toaster.create({ 
+                      title: "새 메시지 도착", 
+                      type: "info",
+                      description: `${messageUserName}님의 새 메시지`
+                    }); 
+                  } catch {}
+                }
               // refetch()는 중복 유발 가능성이 있어 실시간 수신시 생략
             }
           });
           stompRef.current = c;
+          // 연결 직후 한 번 즉시 동기화해서, 구독 이전에 도착한 환영 메시지도 바로 반영
+          try { refetch(); } catch {}
         } catch {}
       } catch {}
     })();
@@ -436,7 +676,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
         const list = await fileApi.getList({ module: "CHAT", moduleId: backendThreadId });
         if (!mounted) return;
         const arr: any[] = Array.isArray(list) ? list : (list && Array.isArray((list as any).data) ? (list as any).data : []);
-        setThreadFiles(arr.map((f: any) => ({ fileId: f.fileId, originName: f.originName, mimeType: f.mimeType, createdDate: f.createdDate })));
+        setThreadFiles(arr.map((f: any) => ({ fileId: String(f.fileId), originName: f.originName, mimeType: f.mimeType, createdDate: f.createdDate })));
       } catch {}
     })();
     return () => { mounted = false; };
@@ -468,6 +708,12 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
     initialPageParam: "LAST" as any,
     // 위로 스크롤시 더 과거 페이지(번호-1)를 불러옴
     getNextPageParam: (lastPage) => (lastPage.number > 0 ? lastPage.number - 1 : undefined),
+    // 캐시 시간을 적절히 설정하여 새로운 메시지를 반영
+    staleTime: 3000, // 3초간 fresh 상태 유지
+    refetchInterval: 10000, // 10초마다 자동 새로고침 (적절한 반응성)
+    refetchOnWindowFocus: true, // 창 포커스 시 새로고침
+    refetchOnMount: true, // 컴포넌트 마운트 시 새로고침
+    refetchIntervalInBackground: false, // 백그라운드에서는 새로고침 안함 (성능 최적화)
   });
 
   React.useEffect(() => {
@@ -488,7 +734,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
         sender: sm.senderType === "ADMIN" ? "ADMIN" as const : "USER" as const,
         content: String(sm.content ?? ""),
         createdAt: sm.createdAt,
-        edited: !!(sm as any).edited,
+        edited: false, // 임시로 모든 메시지의 edited 상태를 false로 설정
       } as Message;
       if (attachments && attachments.length > 0) {
         const a0 = attachments[0];
@@ -560,15 +806,15 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
     return () => { mounted = false; };
   }, [backendThreadId, messages]);
 
-  // 선택 스레드 변경 시 하단으로 스크롤
-  React.useEffect(() => {
-    if (listRef.current) {
-      const el = listRef.current;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
-  }, [selectedThreadId]);
+  // 선택 스레드 변경 시에는 자동 스크롤하지 않음 (사용자가 원하는 위치 유지)
+  // React.useEffect(() => {
+  //   if (listRef.current) {
+  //     const el = listRef.current;
+  //     requestAnimationFrame(() => {
+  //       el.scrollTop = el.scrollHeight;
+  //     });
+  //   }
+  // }, [selectedThreadId]);
 
   // 새 메시지/낙관적 메시지 변화 시 하단으로 자동 스크롤
   React.useEffect(() => {
@@ -760,7 +1006,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
       try {
         await chatApi.updateMessage(editingMessageId, { content: editingText, actor: "admin" });
         setMessages(prev => prev.map(m => (
-          m.id === editingMessageId ? { ...m, content: editingText } : m
+          m.id === editingMessageId ? { ...m, content: editingText, edited: true } : m
         )));
       } catch {}
     })();
@@ -857,6 +1103,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
   };
 
   return (
+    <>
     <Flex direction="column" h="full" px={2}>
       {/* 탭 */}
       <HStack gap={6} mb={2} borderBottomWidth="1px" borderColor="gray.200" px={2}>
@@ -866,7 +1113,25 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
           borderColor={activeTab === "chat" ? "blue.500" : "transparent"}
           color={activeTab === "chat" ? "blue.600" : "gray.600"}
           cursor="pointer"
-          onClick={() => { setActiveTab("chat"); activeTabRef.current = "chat"; setNewMsgCount(0); }}
+          onClick={async () => { 
+            setActiveTab("chat"); 
+            activeTabRef.current = "chat"; 
+            setNewMsgCount(0); // 대화 탭으로 전환 시 뱃지 초기화
+            
+            // 현재 스레드의 뱃지 초기화 (백엔드 API 호출)
+            if (selectedThreadId) {
+              try {
+                await chatApi.markRead(selectedThreadId, "admin");
+                // 뱃지 초기화 후 채널과 스레드 목록 새로고침
+                if (channelsPanelRef.current) {
+                  channelsPanelRef.current.refreshChannels();
+                }
+                onTabChange();
+              } catch (error) {
+                console.error("스레드 뱃지 초기화 실패:", error);
+              }
+            }
+          }}
         >
           <HStack>
             <Text fontWeight={activeTab === "chat" ? "bold" : "normal"}>대화</Text>
@@ -890,36 +1155,206 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
       </HStack>
 
       {activeTab === "files" ? (
-        <VStack align="stretch" gap={0} flex={1} overflowY="auto" py={2}>
-          {threadFiles.length === 0 && (
-            <Box px={2} py={6}><Text color={colors.text.muted}>표시할 파일이 없습니다.</Text></Box>
-          )}
-          {threadFiles.map(f => {
-            const api = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "") + "/api/v1";
-            const downloadUrl = `${api}/cms/file/public/download/${f.fileId}`;
-            const isImage = (f.mimeType || "").startsWith("image/");
-            return (
-              <HStack key={f.fileId} px={2} py={3} borderBottomWidth="1px" align="center">
-                <HStack flex={1}>
-                  {isImage ? <LuImage size={18} /> : <LuFile size={18} />}
-                  <Box>
-                    <Text fontWeight="medium">{f.originName}</Text>
-                    <Text fontSize="xs" color="gray.500">
-                      {f.createdDate ? new Date(f.createdDate).toLocaleString() : ""}
-                    </Text>
+        <Box position="relative" flex={1} style={{ overflowX: 'hidden', ...(isImageModalOpen ? { overflowY: 'hidden' } : {}) }}>
+          <VStack align="stretch" gap={0} flex={1} overflowY={isImageModalOpen ? "hidden" : "auto"} py={2} style={{ overflowX: 'hidden' }}>
+            {threadFiles.length === 0 && (
+              <Box px={2} py={6}><Text color={colors.text.muted}>표시할 파일이 없습니다.</Text></Box>
+            )}
+            {threadFiles.map(f => {
+              const api = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "") + "/api/v1";
+              const downloadUrl = `${api}/cms/file/public/download/${f.fileId}`;
+              const isImage = (f.mimeType || "").startsWith("image/");
+              return (
+                <HStack key={f.fileId} px={2} py={3} borderBottomWidth="1px" align="center">
+                  <HStack 
+                    flex={1} 
+                    cursor={isImage ? "pointer" : "default"}
+                    onClick={isImage ? () => {
+                      setSelectedImage({
+                        src: downloadUrl,
+                        alt: f.originName
+                      });
+                      // 마운트 후 오픈으로 전환하여 슬라이드 인 애니메이션 보장
+                      setIsDrawerMounted(true);
+                      requestAnimationFrame(() => setIsDrawerOpen(true));
+                      setIsImageModalOpen(true);
+                      // 미리보기 열릴 때 페이지 스크롤 전면 차단 (X/Y 모두)
+                      document.body.style.overflow = 'hidden';
+                    } : undefined}
+                    _hover={isImage ? { bg: "gray.50" } : {}}
+                    borderRadius="md"
+                    px={2}
+                    py={1}
+                  >
+                    {isImage ? <LuImage size={18} /> : <LuFile size={18} />}
+                    <Box>
+                      <Text fontWeight="medium">{f.originName}</Text>
+                      <Text fontSize="xs" color="gray.500">
+                        {f.createdDate ? new Date(f.createdDate).toLocaleString() : ""}
+                      </Text>
+                    </Box>
+                  </HStack>
+                  <Box w="40px" display="flex" justifyContent="center">
+                    <a href={downloadUrl} target="_blank" rel="noreferrer">
+                      <IconButton aria-label="다운로드" size="xs" variant="ghost">
+                        <LuDownload size={16} />
+                      </IconButton>
+                    </a>
                   </Box>
                 </HStack>
-                <Box w="40px" display="flex" justifyContent="center">
-                  <a href={downloadUrl} target="_blank" rel="noreferrer">
-                    <IconButton aria-label="다운로드" size="xs" variant="ghost">
-                      <LuDownload size={16} />
-                    </IconButton>
-                  </a>
-                </Box>
-              </HStack>
-            );
-          })}
-        </VStack>
+              );
+            })}
+          </VStack>
+          
+          {/* 첨부파일 탭 내에서만 나오는 이미지 미리보기 Drawer */}
+          {isDrawerMounted && (
+            <Box
+              position="absolute"
+              top={0}
+              right={0}
+              bottom={0}
+              left={0}
+              bg="gray.50"
+              zIndex={1000}
+              display="flex"
+              flexDirection="column"
+              transform={isDrawerOpen ? "translateX(0)" : "translateX(100%)"}
+              transition="transform 0.3s ease-in-out"
+              onTransitionEnd={() => { if (!isDrawerOpen) { setIsDrawerMounted(false); setSelectedImage(null); } }}
+              overflow="hidden"
+              // 미리보기 시 모든 스크롤 완전 차단
+              onWheel={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onTouchMove={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onScroll={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              style={{ 
+                overscrollBehavior: 'none',
+                overflowX: 'hidden',
+                overflowY: 'hidden'
+              } as React.CSSProperties}
+            >
+              {/* 헤더 */}
+              <Box
+                p={4}
+                borderBottomWidth="1px"
+                borderColor="gray.200"
+                bg="gray.100"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                position="relative"
+                flexShrink={0}
+                boxShadow="sm"
+              >
+                {/* 왼쪽 상단 닫기 버튼 */}
+                <Button
+                  position="absolute"
+                  left={4}
+                  top="50%"
+                  transform="translateY(-50%)"
+                  size="sm"
+                  variant="ghost"
+                  colorScheme="gray"
+                  onClick={() => { 
+                    setIsDrawerOpen(false); 
+                    setIsImageModalOpen(false);
+                    // 미리보기 닫힐 때 페이지 스크롤 복원
+                    document.body.style.overflow = 'auto';
+                  }}
+                  borderRadius="full"
+                  w="32px"
+                  h="32px"
+                  p={0}
+                  _hover={{ bg: "gray.200" }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </Button>
+                
+                {/* 중앙 타이틀 */}
+                <Text 
+                  fontWeight="semibold" 
+                  fontSize="md" 
+                  color="gray.800"
+                  textAlign="center"
+                  overflow="hidden" 
+                  textOverflow="ellipsis" 
+                  whiteSpace="nowrap"
+                  maxW="calc(100% - 80px)"
+                >
+                  {selectedImage?.alt}
+                </Text>
+              </Box>
+              
+              {/* 이미지 영역 - 전체 화면 중앙, 스크롤 없음 */}
+              <Box 
+                flex={1} 
+                display="flex" 
+                justifyContent="center" 
+                alignItems="center" 
+                overflow="hidden"
+                bg="transparent"
+                p={0}
+                position="relative"
+                w="100%"
+                h="100%"
+                maxW="100%"
+                maxH="100%"
+                // 스크롤 완전 차단
+                onWheel={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onTouchMove={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onScroll={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                style={{ 
+                  overflowX: 'hidden',
+                  overflowY: 'hidden',
+                  maxWidth: '100%',
+                  maxHeight: '100%'
+                } as React.CSSProperties}
+              >
+                {selectedImage && (
+                  <Box
+                    w="100%"
+                    h="100%"
+                    maxW="100%"
+                    maxH="100%"
+                    display="flex"
+                    justifyContent="center"
+                    alignItems="center"
+                    overflow="hidden"
+                    p={4}
+                    style={{ 
+                      overflowX: 'hidden',
+                      overflowY: 'hidden',
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <Image
+                      src={selectedImage.src}
+                      alt={selectedImage.alt}
+                      maxW="100%"
+                      maxH="100%"
+                      w="auto"
+                      h="auto"
+                      objectFit="contain"
+                      draggable={false}
+                      borderRadius="md"
+                      style={{ 
+                        maxWidth: '100%',
+                        maxHeight: '100%',
+                        width: 'auto',
+                        height: 'auto',
+                        objectFit: 'contain',
+                        display: 'block'
+                      }}
+                    />
+                  </Box>
+                )}
+              </Box>
+            </Box>
+          )}
+        </Box>
       ) : (
       <VStack align="stretch" gap={3} flex={1} overflowY="auto" py={2}
         ref={listRef}
@@ -991,9 +1426,16 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
                         <img
                           src={m.attachment.previewUrl}
                           alt={m.attachment.name}
-                          style={{ maxWidth: "320px", width: "100%", borderRadius: "6px", display: imageLoadedMap[m.id] ? "block" : "none" }}
+                          style={{ maxWidth: "320px", width: "100%", borderRadius: "6px", display: imageLoadedMap[m.id] ? "block" : "none", cursor: "pointer" }}
                           onLoad={() => setImageLoadedMap(prev => ({ ...prev, [m.id]: true }))}
                           onError={() => setImageLoadedMap(prev => ({ ...prev, [m.id]: true }))}
+                          onClick={() => {
+                            setSelectedImage({
+                              src: m.attachment?.previewUrl || m.attachment?.downloadUrl || "",
+                              alt: m.attachment?.name || "image"
+                            });
+                            setIsImageModalOpen(true);
+                          }}
                         />
                       </Box>
                     </Box>
@@ -1017,7 +1459,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
                   )}
                 </HStack>
               </Box>
-              <Flex mt={1} align="center" justify={isMine ? "space-between" : "space-between"}>
+              <Flex mt={1} align="center" justify={isMine ? "flex-end" : "flex-start"}>
                 <HStack gap={1.5} flexShrink={0}>
                   {isEditing ? (
                     <>
@@ -1126,5 +1568,6 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
         </>
       )}
     </Flex>
+    </>
   );
 }

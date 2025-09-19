@@ -23,8 +23,8 @@ export interface SpringPage<T> {
 }
 
 export const chatApi = {
-    getChannels: async (): Promise<Array<{ id: number; cmsCode: string; cmsName?: string }>> => {
-        return await privateApi.get<Array<{ id: number; cmsCode: string; cmsName?: string }>>(
+    getChannels: async (): Promise<Array<{ id: number; cmsCode: string; cmsName?: string; unreadCount?: number }>> => {
+        return await privateApi.get<Array<{ id: number; cmsCode: string; cmsName?: string; unreadCount?: number }>>(
             `/cms/chat/channels`
         );
     },
@@ -34,8 +34,8 @@ export const chatApi = {
         );
     },
 
-    getThreadsByChannel: async (channelId: number): Promise<Array<{ id: number; channelId: number; userIdentifier: string; userName?: string }>> => {
-        return await privateApi.get<Array<{ id: number; channelId: number; userIdentifier: string; userName?: string }>>(
+    getThreadsByChannel: async (channelId: number): Promise<Array<{ id: number; channelId: number; userIdentifier: string; userName?: string; unreadCount?: number }>> => {
+        return await privateApi.get<Array<{ id: number; channelId: number; userIdentifier: string; userName?: string; unreadCount?: number }>>(
             `/cms/chat/channels/${channelId}/threads`
         );
     },
@@ -95,6 +95,12 @@ export const chatApi = {
 
     deleteThread: async (threadId: number, actor?: string): Promise<void> => {
         return await privateApi.delete<void>(`/cms/chat/threads/${threadId}`, {
+            params: { actor: actor ?? "admin" }
+        });
+    },
+
+    markRead: async (threadId: number, actor?: string): Promise<void> => {
+        return await privateApi.post<void>(`/cms/chat/threads/${threadId}/read`, undefined, {
             params: { actor: actor ?? "admin" }
         });
     },

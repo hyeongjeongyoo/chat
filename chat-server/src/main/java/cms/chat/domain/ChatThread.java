@@ -65,6 +65,9 @@ public class ChatThread {
     @Column(name = "updated_ip", length = 50)
     private String updatedIp;
 
+    @Column(name = "last_read_at")
+    private LocalDateTime lastReadAt;
+
     public static ChatThread create(ChatChannel channel, String userIdentifier, String userName, String userIp, String actor) {
         ChatThread thread = new ChatThread();
         thread.channel = channel;

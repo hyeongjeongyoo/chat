@@ -8,6 +8,7 @@ import { ReactNode } from "react";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { useState } from "react";
 import { AuthInitializer } from "@/components/auth/AuthInitializer";
+import { ChatNotificationProvider } from "@/contexts/ChatNotificationContext";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -28,11 +29,13 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <RecoilRoot>
       <QueryClientProvider client={queryClient}>
-        <AuthInitializer />
-        <ChakraProvider value={defaultSystem}>
-          <ColorModeProvider>{children}</ColorModeProvider>
-        </ChakraProvider>
-        <ReactQueryDevtools initialIsOpen={false} />
+        <ChatNotificationProvider>
+          <AuthInitializer />
+          <ChakraProvider value={defaultSystem}>
+            <ColorModeProvider>{children}</ColorModeProvider>
+          </ChakraProvider>
+          <ReactQueryDevtools initialIsOpen={false} />
+        </ChatNotificationProvider>
       </QueryClientProvider>
     </RecoilRoot>
   );

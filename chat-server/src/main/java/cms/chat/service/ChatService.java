@@ -5,6 +5,7 @@ import cms.chat.repository.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,19 +20,22 @@ public class ChatService {
     private final ChatParticipantRepository chatParticipantRepository;
     private final ChatSessionLogRepository chatSessionLogRepository;
     private final ChatSettingRepository chatSettingRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     public ChatService(ChatChannelRepository chatChannelRepository,
                        ChatThreadRepository chatThreadRepository,
                        ChatMessageRepository chatMessageRepository,
                        ChatParticipantRepository chatParticipantRepository,
                        ChatSessionLogRepository chatSessionLogRepository,
-                       ChatSettingRepository chatSettingRepository) {
+                       ChatSettingRepository chatSettingRepository,
+                       SimpMessagingTemplate messagingTemplate) {
         this.chatChannelRepository = chatChannelRepository;
         this.chatThreadRepository = chatThreadRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.chatParticipantRepository = chatParticipantRepository;
         this.chatSessionLogRepository = chatSessionLogRepository;
         this.chatSettingRepository = chatSettingRepository;
+        this.messagingTemplate = messagingTemplate;
     }
 
     @Transactional
@@ -55,8 +59,58 @@ public class ChatService {
 
     @Transactional
     public ChatThread getOrCreateThread(ChatChannel channel, String userIdentifier, String userName, String userIp, String actor) {
+        System.out.println("getOrCreateThread 호출됨 - channelId: " + channel.getId() + ", userIdentifier: " + userIdentifier);
+        
         return chatThreadRepository.findByChannelAndUserIdentifier(channel, userIdentifier)
-                .orElseGet(() -> chatThreadRepository.save(ChatThread.create(channel, userIdentifier, userName, userIp, actor)));
+                .map(existingThread -> {
+                    System.out.println("기존 스레드 발견: " + existingThread.getId() + " - 환영 메시지 생성하지 않음");
+                    return existingThread;
+                })
+                .orElseGet(() -> {
+                    System.out.println("기존 스레드 없음, 새로운 스레드 생성 시작");
+                    ChatThread newThread = chatThreadRepository.save(ChatThread.create(channel, userIdentifier, userName, userIp, actor));
+                    System.out.println("새로운 스레드 생성 완료: " + newThread.getId());
+                    
+                    // 새로운 스레드 생성 시 자동 환영 메시지 전송
+                    createWelcomeMessage(newThread, actor);
+                    
+                    return newThread;
+                });
+    }
+    
+    @Transactional
+    public void createWelcomeMessage(ChatThread thread, String actor) {
+        try {
+            System.out.println("환영 메시지 생성 시작 - threadId: " + thread.getId());
+            ChatMessage welcomeMessage = ChatMessage.createText(thread, "ADMIN", "안녕하세요, 핸디입니다! 무엇을 도와드릴까요?", actor);
+            ChatMessage savedWelcomeMessage = chatMessageRepository.saveAndFlush(welcomeMessage);
+            System.out.println("환영 메시지 저장 완료: " + savedWelcomeMessage.getId());
+            
+            // WebSocket으로 환영 메시지 브로드캐스트
+            try {
+                // 간단한 DTO 생성 (ChatController의 toDto 메서드와 유사)
+                java.util.Map<String, Object> dto = new java.util.HashMap<>();
+                dto.put("id", savedWelcomeMessage.getId());
+                dto.put("threadId", thread.getId());
+                dto.put("senderType", savedWelcomeMessage.getSenderType());
+                dto.put("senderName", savedWelcomeMessage.getSenderName());
+                dto.put("messageType", savedWelcomeMessage.getMessageType());
+                dto.put("content", savedWelcomeMessage.getContent());
+                dto.put("isRead", savedWelcomeMessage.isRead());
+                dto.put("createdAt", savedWelcomeMessage.getCreatedAt());
+                dto.put("edited", false);
+                
+                messagingTemplate.convertAndSend("/sub/chat/" + thread.getId(), dto);
+                System.out.println("환영 메시지 WebSocket 전송 완료: /sub/chat/" + thread.getId());
+            } catch (Exception wsException) {
+                // WebSocket 전송 실패는 무시
+                System.err.println("환영 메시지 WebSocket 전송 실패: " + wsException.getMessage());
+            }
+        } catch (Exception e) {
+            // 환영 메시지 전송 실패는 무시 (스레드는 이미 생성됨)
+            System.err.println("환영 메시지 생성 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     @Transactional
@@ -115,7 +169,8 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public long countUnread(ChatThread thread) {
-        return chatMessageRepository.countByThreadAndIsReadIsFalseAndDeletedYn(thread, "N");
+        // USER 메시지만 카운트 (ADMIN 메시지는 뱃지에 포함하지 않음)
+        return chatMessageRepository.countByThreadAndSenderTypeAndIsReadIsFalseAndDeletedYn(thread, "USER", "N");
     }
 
     @Transactional(readOnly = true)

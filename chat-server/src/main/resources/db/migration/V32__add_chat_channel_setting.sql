@@ -14,3 +14,4 @@ CREATE TABLE IF NOT EXISTS chat_channel_setting (
 
 CREATE INDEX IF NOT EXISTS idx_chat_channel_setting_channel ON chat_channel_setting (channel_id);
 
+
