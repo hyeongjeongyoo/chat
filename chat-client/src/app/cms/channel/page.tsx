@@ -283,8 +283,8 @@ export default function ChannelManagementPage() {
                   size="sm"
                   flex={1}
                 />
-                <Button 
-                  size="sm" 
+                <Button
+                  size="sm"
                   variant="outline"
                   onClick={() => setInitUserIdentifier(generateCustomerIdentifier())}
                 >
@@ -292,16 +292,16 @@ export default function ChannelManagementPage() {
                   자동생성
                 </Button>
               </HStack>
-              <Input 
-                placeholder="고객명" 
-                value={initUserName} 
+              <Input
+                placeholder="고객명"
+                value={initUserName}
                 onChange={(e) => setInitUserName(e.target.value)}
                 size="sm"
               />
             </VStack>
           </VStack>
 
-          <Button 
+          <Button
             disabled={!code.trim() || !name.trim() || !ownerUuid.trim()}
             onClick={async () => {
               const created = await create();
@@ -311,11 +311,11 @@ export default function ChannelManagementPage() {
                 // 초기 고객 스레드 생성
                 if (initUserIdentifier.trim()) {
                   try {
-                    const newThread = await chatApi.createOrGetThread({ 
-                      channelId: created.id, 
-                      userIdentifier: initUserIdentifier.trim(), 
-                      userName: initUserName.trim() || undefined, 
-                      actor: "admin" 
+                    const newThread = await chatApi.createOrGetThread({
+                      channelId: created.id,
+                      userIdentifier: initUserIdentifier.trim(),
+                      userName: initUserName.trim() || undefined,
+                      actor: "admin"
                     });
                     
                     // 스레드 목록 업데이트
@@ -326,31 +326,31 @@ export default function ChannelManagementPage() {
                     
                     // 환영 메시지가 생성되었음을 알리는 토스트
                     // 채널 생성 성공 토스트
-                    toaster.create({ 
-                      title: "채널이 생성되었습니다.", 
+                    toaster.create({
+                      title: "채널이 생성되었습니다.",
                       description: `채널명: ${created.cmsName || created.cmsCode}`,
-                      type: "success" 
+                      type: "success"
                     });
                     
                   } catch (threadError: any) {
-                    toaster.create({ 
-                      title: "채널은 생성되었지만 초기 고객 생성에 실패했습니다.", 
+                    toaster.create({
+                      title: "채널은 생성되었지만 초기 고객 생성에 실패했습니다.",
                       description: threadError?.message || "알 수 없는 오류가 발생했습니다.",
-                      type: "warning" 
+                      type: "warning"
                     });
                   }
                 } else {
-                  toaster.create({ 
-                    title: "채널을 생성했습니다.", 
+                  toaster.create({
+                    title: "채널을 생성했습니다.",
                     description: `UUID: ${created.ownerUserUuid}`,
-                    type: "success" 
+                    type: "success"
                   });
                 }
               } catch (error: any) {
-                toaster.create({ 
-                  title: "채널 생성에 실패했습니다.", 
+                toaster.create({
+                  title: "채널 생성에 실패했습니다.",
                   description: error?.message || "알 수 없는 오류가 발생했습니다.",
-                  type: "error" 
+                  type: "error"
                 });
               }
               

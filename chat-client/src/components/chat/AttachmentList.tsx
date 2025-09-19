@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Flex, Text, Icon, Link, Button } from "@chakra-ui/react";
+import { Box, Flex, Text, Icon, Link, Button, Image } from "@chakra-ui/react";
 import { LuFile, LuDownload, LuImage } from "react-icons/lu";
 import { useQuery } from "@tanstack/react-query";
 import { fileApi } from "@/lib/api/file";
@@ -41,6 +41,12 @@ const fetchAttachments = async (threadId: number | null): Promise<Attachment[]> 
   if (!threadId) return [];
   const list = await fileApi.getList({ module: "CHAT", moduleId: threadId });
   const arr: any[] = Array.isArray(list) ? list : (list && Array.isArray((list as any).data) ? (list as any).data : []);
+  // 최신이 상단: createdDate/updatedDate 기준 내림차순 정렬
+  arr.sort((a: any, b: any) => {
+    const at = new Date(a.createdDate || a.updatedDate || 0).getTime();
+    const bt = new Date(b.createdDate || b.updatedDate || 0).getTime();
+    return bt - at;
+  });
   const base = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
   const toAbs = (u?: string) => !u ? undefined : (u.startsWith("http") ? u : `${base}${u}`);
   return arr.map((f: any) => ({
@@ -95,7 +101,22 @@ export const AttachmentList = ({ selectedThreadId }: AttachmentListProps) => {
         </Flex>
       ) : (
         <Flex direction="column" gap={2}>
-          {attachments?.map((file) => (
+          {attachments?.map((file) => {
+            const isImage = file.fileType.startsWith("image/");
+            const ext = String(file.fileName || "").split('.').pop()?.toLowerCase();
+            const iconStyle = (() => {
+              if (!ext) return { bg: "gray.100", color: "gray.700", label: "FILE" } as const;
+              if (ext === "pdf") return { bg: "red.50", color: "red.600", label: "PDF" } as const;
+              if (["xls", "xlsx", "csv"].includes(ext)) return { bg: "green.50", color: "green.700", label: "XLS" } as const;
+              if (["doc", "docx"].includes(ext)) return { bg: "blue.50", color: "blue.700", label: "DOC" } as const;
+              if (["ppt", "pptx"].includes(ext)) return { bg: "orange.50", color: "orange.700", label: "PPT" } as const;
+              if (["hwp"].includes(ext)) return { bg: "teal.50", color: "teal.700", label: "HWP" } as const;
+              if (["html", "htm"].includes(ext)) return { bg: "cyan.50", color: "cyan.700", label: "HTML" } as const;
+              if (["url"].includes(ext)) return { bg: "cyan.50", color: "cyan.700", label: "URL" } as const;
+              if (["zip", "rar", "7z"].includes(ext)) return { bg: "purple.50", color: "purple.700", label: "ZIP" } as const;
+              return { bg: "gray.100", color: "gray.700", label: (ext || "FILE").toUpperCase().slice(0,4) } as const;
+            })();
+            return (
             <Flex
               key={file.id}
               p={3}
@@ -106,11 +127,23 @@ export const AttachmentList = ({ selectedThreadId }: AttachmentListProps) => {
               _hover={{ bg: "gray.50" }}
             >
               <Flex align="center" flex={1}>
-                <Icon
-                  as={file.fileType.startsWith("image/") ? LuImage : LuFile}
-                  boxSize={5}
-                  mr={3}
-                />
+                {isImage ? (
+                  <Box w="32px" h="32px" borderRadius="md" overflow="hidden" flexShrink={0} bg="gray.100" mr={3}>
+                    <Image
+                      src={file.fileUrl}
+                      alt={file.fileName}
+                      width="32px"
+                      height="32px"
+                      style={{ display: 'block', objectFit: 'cover', width: '32px', height: '32px' }}
+                    />
+                  </Box>
+                ) : (
+                  <Box w="32px" h="32px" borderRadius="md" flexShrink={0} bg={iconStyle.bg} display="flex" alignItems="center" justifyContent="center" mr={3}>
+                    <Text fontSize="10px" fontWeight="bold" color={iconStyle.color as any}>
+                      {iconStyle.label}
+                    </Text>
+                  </Box>
+                )}
                 <Box>
                   <Text fontSize="sm" fontWeight="medium">
                     {file.fileName}
@@ -127,7 +160,7 @@ export const AttachmentList = ({ selectedThreadId }: AttachmentListProps) => {
                 </Button>
               </Link>
             </Flex>
-          ))}
+          );})}
         </Flex>
       )}
     </Box>

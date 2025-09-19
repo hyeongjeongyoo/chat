@@ -676,7 +676,12 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
         const list = await fileApi.getList({ module: "CHAT", moduleId: backendThreadId });
         if (!mounted) return;
         const arr: any[] = Array.isArray(list) ? list : (list && Array.isArray((list as any).data) ? (list as any).data : []);
-        setThreadFiles(arr.map((f: any) => ({ fileId: String(f.fileId), originName: f.originName, mimeType: f.mimeType, createdDate: f.createdDate })));
+        const sorted = arr.sort((a: any, b: any) => {
+          const at = new Date(a.createdDate || a.updatedDate || 0).getTime();
+          const bt = new Date(b.createdDate || b.updatedDate || 0).getTime();
+          return bt - at; // 최신 먼저
+        });
+        setThreadFiles(sorted.map((f: any) => ({ fileId: String(f.fileId), originName: f.originName, mimeType: f.mimeType, createdDate: f.createdDate })));
       } catch {}
     })();
     return () => { mounted = false; };
@@ -1163,7 +1168,21 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
             {threadFiles.map(f => {
               const api = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "") + "/api/v1";
               const downloadUrl = `${api}/cms/file/public/download/${f.fileId}`;
+              const viewUrl = `${api}/cms/file/public/view/${f.fileId}`;
               const isImage = (f.mimeType || "").startsWith("image/");
+              const ext = String(f.originName || "").split('.').pop()?.toLowerCase();
+              const iconStyle = (() => {
+                if (!ext) return { bg: "gray.100", color: "gray.700", label: "FILE" } as const;
+                if (ext === "pdf") return { bg: "red.50", color: "red.600", label: "PDF" } as const;
+                if (["xls", "xlsx", "csv"].includes(ext)) return { bg: "green.50", color: "green.700", label: "XLS" } as const;
+                if (["doc", "docx"].includes(ext)) return { bg: "blue.50", color: "blue.700", label: "DOC" } as const;
+                if (["ppt", "pptx"].includes(ext)) return { bg: "orange.50", color: "orange.700", label: "PPT" } as const;
+                if (["hwp"].includes(ext)) return { bg: "teal.50", color: "teal.700", label: "HWP" } as const;
+                if (["html", "htm"].includes(ext)) return { bg: "cyan.50", color: "cyan.700", label: "HTML" } as const;
+                if (["url"].includes(ext)) return { bg: "cyan.50", color: "cyan.700", label: "URL" } as const;
+                if (["zip", "rar", "7z"].includes(ext)) return { bg: "purple.50", color: "purple.700", label: "ZIP" } as const;
+                return { bg: "gray.100", color: "gray.700", label: (ext || "FILE").toUpperCase().slice(0,4) } as const;
+              })();
               return (
                 <HStack key={f.fileId} px={2} py={3} borderBottomWidth="1px" align="center">
                   <HStack 
@@ -1186,7 +1205,23 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                     px={2}
                     py={1}
                   >
-                    {isImage ? <LuImage size={18} /> : <LuFile size={18} />}
+                    {isImage ? (
+                      <Box w="32px" h="32px" borderRadius="md" overflow="hidden" flexShrink={0} bg="gray.100">
+                        <Image
+                          src={viewUrl}
+                          alt={f.originName}
+                          width="32px"
+                          height="32px"
+                          style={{ display: 'block', objectFit: 'cover', width: '32px', height: '32px' }}
+                        />
+                      </Box>
+                    ) : (
+                      <Box w="32px" h="32px" borderRadius="md" flexShrink={0} bg={iconStyle.bg} display="flex" alignItems="center" justifyContent="center">
+                        <Text fontSize="10px" fontWeight="bold" color={iconStyle.color as any}>
+                          {iconStyle.label}
+                        </Text>
+                      </Box>
+                    )}
                     <Box>
                       <Text fontWeight="medium">{f.originName}</Text>
                       <Text fontSize="xs" color="gray.500">
