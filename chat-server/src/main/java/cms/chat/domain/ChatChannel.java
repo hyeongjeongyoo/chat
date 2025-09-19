@@ -34,6 +34,9 @@ public class ChatChannel {
     @Column(name = "cms_name", length = 100)
     private String cmsName;
 
+    @Column(name = "owner_user_uuid", length = 36)
+    private String ownerUserUuid;
+
     @Column(name = "created_by", length = 50)
     private String createdBy;
 
@@ -55,9 +58,14 @@ public class ChatChannel {
     private String updatedIp;
 
     public static ChatChannel create(String cmsCode, String cmsName, String actor) {
+        return create(cmsCode, cmsName, actor, null);
+    }
+
+    public static ChatChannel create(String cmsCode, String cmsName, String actor, String ownerUserUuid) {
         ChatChannel channel = new ChatChannel();
         channel.cmsCode = cmsCode;
         channel.cmsName = cmsName;
+        channel.ownerUserUuid = ownerUserUuid;
         channel.createdBy = actor;
         channel.updatedBy = actor;
         // 일부 운영 DB에서는 created_ip / updated_ip 가 NOT NULL 제약일 수 있음

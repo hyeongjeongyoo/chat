@@ -866,7 +866,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
           borderColor={activeTab === "chat" ? "blue.500" : "transparent"}
           color={activeTab === "chat" ? "blue.600" : "gray.600"}
           cursor="pointer"
-          onClick={() => { setActiveTab("chat"); setNewMsgCount(0); }}
+          onClick={() => { setActiveTab("chat"); activeTabRef.current = "chat"; setNewMsgCount(0); }}
         >
           <HStack>
             <Text fontWeight={activeTab === "chat" ? "bold" : "normal"}>대화</Text>
@@ -883,7 +883,7 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
           borderColor={activeTab === "files" ? "blue.500" : "transparent"}
           color={activeTab === "files" ? "blue.600" : "gray.600"}
           cursor="pointer"
-          onClick={() => setActiveTab("files")}
+          onClick={() => { setActiveTab("files"); activeTabRef.current = "files"; }}
         >
           <Text fontWeight={activeTab === "files" ? "bold" : "normal"}>첨부파일</Text>
         </Box>
@@ -1089,38 +1089,42 @@ function MessagesPanel({ colors, selectedThreadId }: MessagesPanelProps) {
           </Box>
         </Box>
       )}
-      {attached.length > 0 && (
-        <VStack align="stretch" gap={2} mb={2}>
-          <Text fontSize="sm" color={colors.text.muted}>첨부 {attached.length}개</Text>
-          {attached.map((f, idx) => (
-            <HStack key={`${f.name}-${idx}`} justify="space-between" px={3} py={2} borderRadius="md" bg={colors.cardBg}>
-              <HStack>
-                <LuFile size={16} />
-                <Text fontSize="sm">{f.name}</Text>
-              </HStack>
-              <IconButton aria-label="첨부 삭제" size="xs" variant="ghost" onClick={() => removeFileAt(idx)}>
-                <LuX size={14} />
-              </IconButton>
-            </HStack>
-          ))}
-        </VStack>
+      {activeTab === "chat" && (
+        <>
+          {attached.length > 0 && (
+            <VStack align="stretch" gap={2} mb={2}>
+              <Text fontSize="sm" color={colors.text.muted}>첨부 {attached.length}개</Text>
+              {attached.map((f, idx) => (
+                <HStack key={`${f.name}-${idx}`} justify="space-between" px={3} py={2} borderRadius="md" bg={colors.cardBg}>
+                  <HStack>
+                    <LuFile size={16} />
+                    <Text fontSize="sm">{f.name}</Text>
+                  </HStack>
+                  <IconButton aria-label="첨부 삭제" size="xs" variant="ghost" onClick={() => removeFileAt(idx)}>
+                    <LuX size={14} />
+                  </IconButton>
+                </HStack>
+              ))}
+            </VStack>
+          )}
+          <Box h="1px" bg={colors.border} my={2} />
+          <HStack>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={onFilesPicked}
+              accept="image/*,video/*,application/pdf,*/*"
+              style={{ display: "none" }}
+            />
+            <IconButton aria-label="파일" variant="outline" onClick={openFilePicker}>
+              <LuPaperclip size={16} />
+            </IconButton>
+            <Input value={input} onChange={e => setInput(e.target.value)} placeholder="메시지 입력" onKeyDown={e => { if (e.key === "Enter") send(); }} />
+            <Button onClick={send} colorPalette="blue">전송</Button>
+          </HStack>
+        </>
       )}
-      <Box h="1px" bg={colors.border} my={2} />
-      <HStack>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          onChange={onFilesPicked}
-          accept="image/*,video/*,application/pdf,*/*"
-          style={{ display: "none" }}
-        />
-        <IconButton aria-label="파일" variant="outline" onClick={openFilePicker}>
-          <LuPaperclip size={16} />
-        </IconButton>
-        <Input value={input} onChange={e => setInput(e.target.value)} placeholder="메시지 입력" onKeyDown={e => { if (e.key === "Enter") send(); }} />
-        <Button onClick={send} colorPalette="blue">전송</Button>
-      </HStack>
     </Flex>
   );
 }

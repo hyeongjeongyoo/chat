@@ -11,11 +11,16 @@ export default function ChatPopupPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const { threadId, token } = useMemo(() => {
+  const { threadId, token, uuid } = useMemo(() => {
     const tidStr = searchParams.get("threadId");
     const tokenStr = searchParams.get("token");
+    const uuidStr = searchParams.get("uuid");
     const tid = tidStr ? Number(tidStr) : null;
-    return { threadId: Number.isFinite(tid as number) ? (tid as number) : null, token: tokenStr };
+    return { 
+      threadId: Number.isFinite(tid as number) ? (tid as number) : null, 
+      token: tokenStr,
+      uuid: uuidStr
+    };
   }, [searchParams]);
 
   useEffect(() => {
@@ -43,6 +48,39 @@ export default function ChatPopupPage() {
   const [selectedChannelId, setSelectedChannelId] = useState<number | "">("");
   const [threads, setThreads] = useState<Array<{ id: number; channelId: number; userIdentifier: string; userName?: string }>>([]);
   const [selectedThread, setSelectedThread] = useState<number | "">("");
+  const [uuidValidation, setUuidValidation] = useState<{ valid: boolean; config?: any; loading: boolean }>({ valid: false, loading: false });
+  const [uuidError, setUuidError] = useState<string>("");
+
+  // UUID 검증
+  useEffect(() => {
+    if (!uuid) {
+      setUuidValidation({ valid: false, loading: false });
+      setUuidError("");
+      return;
+    }
+
+    setUuidValidation({ valid: false, loading: true });
+    setUuidError("");
+
+    (async () => {
+      try {
+        const validation = await chatApi.validateChannelUuid(uuid);
+        if (validation.valid) {
+          setUuidValidation({ valid: true, config: validation.config, loading: false });
+          // UUID가 유효하면 해당 채널을 자동으로 선택
+          if (validation.config?.channelId) {
+            setSelectedChannelId(validation.config.channelId);
+          }
+        } else {
+          setUuidValidation({ valid: false, loading: false });
+          setUuidError("유효하지 않은 채널 UUID입니다.");
+        }
+      } catch (error) {
+        setUuidValidation({ valid: false, loading: false });
+        setUuidError("UUID 검증 중 오류가 발생했습니다.");
+      }
+    })();
+  }, [uuid]);
 
   useEffect(() => {
     if (threadId) return;
@@ -70,16 +108,44 @@ export default function ChatPopupPage() {
     return (
       <Flex p={4} m={0} w="100vw" h="100vh" overflow="hidden" direction="column" align="center" justify="center" gap={4}>
         <Text fontSize="lg" fontWeight="bold">대화 스레드를 선택하세요</Text>
+        
+        {/* UUID 검증 상태 표시 */}
+        {uuid && (
+          <Box p={3} borderWidth="1px" borderRadius="md" minW="320px" bg={uuidValidation.valid ? "green.50" : uuidValidation.loading ? "blue.50" : "red.50"}>
+            <Text fontSize="sm" fontWeight="bold" mb={2}>
+              채널 UUID: {uuid.substring(0, 8)}...
+            </Text>
+            {uuidValidation.loading && (
+              <Text fontSize="xs" color="blue.600">UUID 검증 중...</Text>
+            )}
+            {uuidValidation.valid && uuidValidation.config && (
+              <Text fontSize="xs" color="green.600">
+                ✓ {uuidValidation.config.cmsName || uuidValidation.config.cmsCode} 채널에 연결됨
+              </Text>
+            )}
+            {uuidError && (
+              <Text fontSize="xs" color="red.600">✗ {uuidError}</Text>
+            )}
+          </Box>
+        )}
+        
         <Flex direction="column" gap={3} minW="320px">
           <Box>
             <Text fontSize="sm" mb={1}>채널</Text>
             <Box as="select" onChange={(e: any) => setSelectedChannelId(e.target.value ? Number(e.target.value) : "")}
-              borderWidth="1px" borderColor="gray.200" rounded="md" px={3} py={2} w="100%" data-value={selectedChannelId as any}>
+              borderWidth="1px" borderColor="gray.200" rounded="md" px={3} py={2} w="100%" data-value={selectedChannelId as any}
+              _disabled={{ opacity: 0.6, cursor: "not-allowed" }}
+              isDisabled={uuid && uuidValidation.valid}>
               <option value="">채널 선택</option>
               {channels.map((ch) => (
                 <option key={ch.id} value={ch.id}>{ch.cmsName || ch.cmsCode}</option>
               ))}
             </Box>
+            {uuid && uuidValidation.valid && (
+              <Text fontSize="xs" color="gray.500" mt={1}>
+                UUID로 자동 선택됨
+              </Text>
+            )}
           </Box>
           <Box>
             <Text fontSize="sm" mb={1}>스레드</Text>

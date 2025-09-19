@@ -209,3 +209,9 @@ kispg:
 
 cors:
   allowed-origins: ${GLOBALS_ALLOW_ORIGIN}
+
+holiday:
+  api:
+    provider: spcde
+    baseUrl: https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService
+    serviceKey: ${HOLIDAY_API_KEY}

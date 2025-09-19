@@ -36,10 +36,15 @@ public class ChatService {
 
     @Transactional
     public ChatChannel getOrCreateChannel(String cmsCode, String cmsName, String actor) {
+        return getOrCreateChannel(cmsCode, cmsName, actor, null);
+    }
+
+    @Transactional
+    public ChatChannel getOrCreateChannel(String cmsCode, String cmsName, String actor, String ownerUserUuid) {
         return chatChannelRepository.findByCmsCodeIgnoreCase(cmsCode)
                 .orElseGet(() -> {
                     try {
-                        return chatChannelRepository.save(ChatChannel.create(cmsCode, cmsName, actor));
+                        return chatChannelRepository.save(ChatChannel.create(cmsCode, cmsName, actor, ownerUserUuid));
                     } catch (org.springframework.dao.DataIntegrityViolationException e) {
                         // Unique constraint race condition safeguard
                         return chatChannelRepository.findByCmsCodeIgnoreCase(cmsCode)

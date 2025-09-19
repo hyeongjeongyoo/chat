@@ -39,12 +39,50 @@ export const chatApi = {
             `/cms/chat/channels/${channelId}/threads`
         );
     },
-    createOrGetChannel: async (params: { cmsCode: string; cmsName?: string; actor?: string }): Promise<{ id: number; cmsCode: string; cmsName?: string }> => {
-        return await privateApi.post<{ id: number; cmsCode: string; cmsName?: string }>(
+    createOrGetChannel: async (params: { cmsCode: string; cmsName?: string; ownerUserUuid?: string; actor?: string }): Promise<{ id: number; cmsCode: string; cmsName?: string; ownerUserUuid?: string }> => {
+        return await privateApi.post<{ id: number; cmsCode: string; cmsName?: string; ownerUserUuid?: string }>(
             `/cms/chat/channels`,
             undefined as any,
-            { headers: {}, params: { cmsCode: params.cmsCode, cmsName: params.cmsName, actor: params.actor ?? "system" } } as any
+            { headers: {}, params: { cmsCode: params.cmsCode, cmsName: params.cmsName, ownerUserUuid: params.ownerUserUuid, actor: params.actor ?? "system" } } as any
         );
+    },
+
+    updateChannel: async (
+        channelId: number,
+        params: { cmsName?: string; ownerUserUuid?: string }
+    ): Promise<{ id: number; cmsCode: string; cmsName?: string; ownerUserUuid?: string }> => {
+        return await privateApi.patch<{ id: number; cmsCode: string; cmsName?: string; ownerUserUuid?: string }>(
+            `/cms/chat/channels/${channelId}`,
+            undefined as any,
+            { headers: {}, params } as any
+        );
+    },
+
+    deleteChannel: async (channelId: number, force: boolean = false): Promise<{ success: boolean } | any> => {
+        return await privateApi.delete<any>(`/cms/chat/channels/${channelId}`, {
+            params: { force }
+        });
+    },
+
+    // 채널 설정 관리
+    getChannelConfig: async (uuid: string): Promise<any> => {
+        return await privateApi.get<any>(`/cms/chat/config/channels/${uuid}`);
+    },
+    
+    setChannelConfig: async (uuid: string, config: any): Promise<any> => {
+        return await privateApi.post<any>(`/cms/chat/config/channels/${uuid}`, config);
+    },
+    
+    getAllChannelConfigs: async (): Promise<Record<string, any>> => {
+        return await privateApi.get<Record<string, any>>('/cms/chat/config/channels');
+    },
+    
+    deleteChannelConfig: async (uuid: string): Promise<any> => {
+        return await privateApi.delete<any>(`/cms/chat/config/channels/${uuid}`);
+    },
+    
+    validateChannelUuid: async (uuid: string): Promise<{ valid: boolean; uuid: string; config?: any }> => {
+        return await privateApi.get<{ valid: boolean; uuid: string; config?: any }>(`/cms/chat/config/validate/${uuid}`);
     },
 
     createOrGetThread: async (params: { channelId: number; userIdentifier: string; userName?: string; userIp?: string; actor?: string }): Promise<{ id: number; channelId: number; userIdentifier: string; userName?: string }> => {
@@ -53,6 +91,12 @@ export const chatApi = {
             undefined as any,
             { headers: {}, params: { channelId: params.channelId, userIdentifier: params.userIdentifier, userName: params.userName, userIp: params.userIp, actor: params.actor ?? "system" } } as any
         );
+    },
+
+    deleteThread: async (threadId: number, actor?: string): Promise<void> => {
+        return await privateApi.delete<void>(`/cms/chat/threads/${threadId}`, {
+            params: { actor: actor ?? "admin" }
+        });
     },
 	sendMessage: async (
 		threadId: number,
