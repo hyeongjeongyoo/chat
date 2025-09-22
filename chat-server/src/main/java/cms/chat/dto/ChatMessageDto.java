@@ -5,6 +5,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -12,6 +15,7 @@ import lombok.Setter;
 public class ChatMessageDto {
     private Long id;
     private Long threadId;
+    private Long channelId;
     private String content;
     private String senderType;
     private String senderName;
@@ -21,4 +25,6 @@ public class ChatMessageDto {
     private boolean isRead;
     private String readAt;
     private String createdAt;
+    private List<cms.file.dto.FileDto> attachments;
+    private Boolean edited;
 }

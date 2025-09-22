@@ -6,7 +6,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 
 import javax.persistence.*;
 import java.time.LocalDateTime;
@@ -70,7 +69,6 @@ public class ChatMessage {
     @Column(name = "updated_by", length = 50)
     private String updatedBy;
 
-    @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
@@ -78,14 +76,14 @@ public class ChatMessage {
     private String updatedIp;
 
   // Soft delete fields
-  @Column(name = "deleted_yn", length = 1, nullable = false)
-  private String deletedYn = "N";
+    @Column(name = "deleted_yn", length = 1, nullable = false)
+    private String deletedYn = "N";
 
-  @Column(name = "deleted_at")
-  private LocalDateTime deletedAt;
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
-  @Column(name = "deleted_by", length = 64)
-  private String deletedBy;
+    @Column(name = "deleted_by", length = 64)
+    private String deletedBy;
 
     public static ChatMessage createText(ChatThread thread, String senderType, String content, String actor) {
         ChatMessage message = new ChatMessage();

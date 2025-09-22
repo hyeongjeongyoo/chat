@@ -16,11 +16,12 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 interface ConversationProps {
   selectedThreadId: number | null;
   compact?: boolean;
+  uuid?: string | null;
 }
 
 const REST_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-export const Conversation = ({ selectedThreadId, compact }: ConversationProps) => {
+export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationProps) => {
   const [messageInput, setMessageInput] = useState("");
   const [editText, setEditText] = useState("");
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
@@ -64,8 +65,8 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
     const arr = (pages as any[])?.flatMap((p: any) => p.content as ChatMessageDto[]) ?? [];
     for (const m of arr) {
       if (!m) continue;
-      // 초기 로딩 시 서버 edited 오판 방지: 기본값을 false로 정규화
-      const normalized = { ...m, edited: false } as ChatMessageDto;
+      // 백엔드에서 받은 edited 상태 사용
+      const normalized = { ...m, edited: m.edited || false } as ChatMessageDto;
       if ((m as any)?.id != null) {
         flat[(m as any).id as number] = normalized; // ID 기준 병합/교체
       } else {
@@ -157,11 +158,11 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
               const idx = list.findIndex((x) => x.id === msg.id);
               if (idx >= 0) {
                 // 수정: 교체
-                const replaced = list.map((x) => (x.id === msg.id ? ({ ...x, ...msg, edited: false }) : x));
+                const replaced = list.map((x) => (x.id === msg.id ? ({ ...x, ...msg, edited: msg.edited || false }) : x));
                 return { ...p, content: replaced };
               }
               // 추가: 마지막에 붙임(서버 정렬이 ASC이므로 최신이 뒤에 위치)
-              return { ...p, content: [...list, { ...msg, edited: false }] };
+              return { ...p, content: [...list, { ...msg, edited: msg.edited || false }] };
             });
             return { ...old, pages: newPages };
           }
@@ -233,6 +234,7 @@ export const Conversation = ({ selectedThreadId, compact }: ConversationProps) =
         threadId: message.threadId,
         content: message.content,
         senderType: message.senderType,
+        uuid: uuid, // UUID 정보 포함
       });
       return true;
     } catch (e) {

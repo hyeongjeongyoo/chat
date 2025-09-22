@@ -7,8 +7,13 @@ import cms.chat.repository.ChatChannelSettingRepository;
 import cms.chat.repository.ChatChannelCustomerRepository;
 import cms.chat.repository.ChatMessageRepository;
 import cms.chat.service.ChatService;
+import cms.chat.dto.ChatMessageDto;
+
 import org.springframework.data.domain.Page;
+
 import cms.common.service.BusinessHoursService;
+import lombok.Data;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -18,106 +23,21 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import javax.validation.constraints.NotBlank;
+
 import java.time.LocalDateTime;
 
+import lombok.Getter;
+import lombok.Setter;
+
+
+@Data
+@Getter
+@Setter
 @RestController
 @RequestMapping({"/chat", "/cms/chat"})
 @Validated
 public class ChatController {
 
-    public static class ChatMessageDto {
-
-        private Long id;
-        private Long threadId;
-        private String senderType;
-        private String content;
-        private java.time.LocalDateTime createdAt;
-        private String messageType;
-        private String fileName;
-        private String fileUrl;
-        private java.util.List<cms.file.dto.FileDto> attachments;
-        private Boolean edited;
-
-        public Long getId() {
-            return id;
-        }
-
-        public void setId(Long id) {
-            this.id = id;
-        }
-
-        public Long getThreadId() {
-            return threadId;
-        }
-
-        public void setThreadId(Long threadId) {
-            this.threadId = threadId;
-        }
-
-        public String getSenderType() {
-            return senderType;
-        }
-
-        public void setSenderType(String senderType) {
-            this.senderType = senderType;
-        }
-
-        public String getContent() {
-            return content;
-        }
-
-        public void setContent(String content) {
-            this.content = content;
-        }
-
-        public java.time.LocalDateTime getCreatedAt() {
-            return createdAt;
-        }
-
-        public void setCreatedAt(java.time.LocalDateTime createdAt) {
-            this.createdAt = createdAt;
-        }
-
-        public String getMessageType() {
-            return messageType;
-        }
-
-        public void setMessageType(String messageType) {
-            this.messageType = messageType;
-        }
-
-        public String getFileName() {
-            return fileName;
-        }
-
-        public void setFileName(String fileName) {
-            this.fileName = fileName;
-        }
-
-        public String getFileUrl() {
-            return fileUrl;
-        }
-
-        public void setFileUrl(String fileUrl) {
-            this.fileUrl = fileUrl;
-        }
-
-        public java.util.List<cms.file.dto.FileDto> getAttachments() {
-            return attachments;
-        }
-
-        public void setAttachments(java.util.List<cms.file.dto.FileDto> attachments) {
-            this.attachments = attachments;
-        }
-
-        public Boolean getEdited() {
-            return edited;
-        }
-
-        public void setEdited(Boolean edited) {
-            this.edited = edited;
-        }
-    }
 
     // 안전 매핑: 컴파일러/롬복 이슈 회피를 위해 리플렉션만 사용
     private ChatMessageDto toDto(Object message, Long threadId) {
@@ -152,8 +72,19 @@ public class ChatController {
             dto.setThreadId(threadId);
             dto.setSenderType((String) getSenderType.invoke(message));
             dto.setContent((String) getContent.invoke(message));
+            
+            // 채널 ID 추가 (알림 로직에서 사용)
+            try {
+                ChatThread thread = chatThreadRepository.findById(threadId).orElse(null);
+                if (thread != null) {
+                    dto.setChannelId(thread.getChannel().getId());
+                }
+            } catch (Exception e) {
+                // 채널 ID 설정 실패 시 무시
+                System.err.println("Failed to set channelId: " + e.getMessage());
+            }
             java.time.LocalDateTime created = (java.time.LocalDateTime) getCreatedAt.invoke(message);
-            dto.setCreatedAt(created);
+            dto.setCreatedAt(created != null ? created.toString() : null);
             if (getMessageType != null) {
                 dto.setMessageType((String) getMessageType.invoke(message));
             }
@@ -166,8 +97,11 @@ public class ChatController {
             if (getUpdatedAt != null) {
                 try {
                     java.time.LocalDateTime updated = (java.time.LocalDateTime) getUpdatedAt.invoke(message);
-                    if (updated != null && created != null && updated.isAfter(created)) {
-                        dto.setEdited(true);
+                    if (updated != null && created != null) {
+                        // 수정된 것으로 간주하려면 생성 시간보다 최소 1초 이상 늦어야 함
+                        // @UpdateTimestamp를 제거했으므로 실제 수정 시에만 updatedAt이 변경됨
+                        long secondsDiff = java.time.Duration.between(created, updated).getSeconds();
+                        dto.setEdited(secondsDiff > 1);
                     } else {
                         dto.setEdited(false);
                     }
@@ -524,7 +458,8 @@ public class ChatController {
     public ResponseEntity<?> sendText(@PathVariable Long threadId,
             @RequestParam @NotBlank String senderType,
             @RequestParam @NotBlank String content,
-            @RequestParam(defaultValue = "system") String actor) {
+            @RequestParam(defaultValue = "system") String actor,
+            @RequestParam(required = false) String uuid) {
         try {
             ChatThread thread = chatThreadRepository.findById(threadId)
                     .orElseGet(() -> {
@@ -539,6 +474,14 @@ public class ChatController {
                     });
             Object message = chatService.sendTextMessage(thread, senderType, content, actor);
             ChatMessageDto dto = toDto(message, threadId);
+            
+            // UUID 추적 로그
+            if (uuid != null && !uuid.isEmpty()) {
+                ChatChannel channel = thread.getChannel();
+                System.out.println(String.format("메시지 수신 - UUID: %s, 업체: %s (%s), 사용자: %s, 내용: %s", 
+                    uuid, channel.getCmsName(), channel.getCmsCode(), thread.getUserIdentifier(), content));
+            }
+            
             try {
                 messagingTemplate.convertAndSend("/sub/chat/" + threadId, dto);
             } catch (Exception ignore) {

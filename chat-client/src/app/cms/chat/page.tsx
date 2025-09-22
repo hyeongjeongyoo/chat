@@ -352,7 +352,7 @@ function ThreadsPanel({ colors, selectedChannelId, selectedThreadId, onSelectThr
             <Text fontWeight="medium">{th.userName || th.userIdentifier}</Text>
             {(th.unreadCount ?? 0) > 0 && (
               <Badge
-                bg="orange.500"
+                bg="red.500"
                 color="white"
                 borderRadius="full"
                 px={2}
@@ -411,6 +411,8 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
   // Drawer 마운트/오픈 상태로 슬라이드 애니메이션 유지
   const [isDrawerMounted, setIsDrawerMounted] = React.useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
+  // 스크롤 위치 저장용
+  const savedScrollPositionRef = React.useRef<number>(0);
 
   // 컴포넌트 언마운트 시 스크롤 복원
   React.useEffect(() => {
@@ -418,6 +420,51 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
       document.body.style.overflow = 'auto';
     };
   }, []);
+
+  // ESC 키로 drawer 닫기
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isDrawerOpen) {
+        setIsDrawerOpen(false);
+        setIsImageModalOpen(false);
+        document.body.style.overflow = 'auto';
+        window.scrollTo(0, savedScrollPositionRef.current);
+      }
+    };
+
+    if (isDrawerOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDrawerOpen]);
+
+  // 외부 클릭으로 drawer 닫기
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (isDrawerOpen) {
+        // drawer가 열려있을 때 외부 클릭 감지
+        const target = e.target as Element;
+        // drawer 내부가 아닌 곳을 클릭했을 때
+        if (!target.closest('[data-drawer-container]')) {
+          setIsDrawerOpen(false);
+          setIsImageModalOpen(false);
+          document.body.style.overflow = 'auto';
+          window.scrollTo(0, savedScrollPositionRef.current);
+        }
+      }
+    };
+
+    if (isDrawerOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDrawerOpen]);
   
   const autoScrollRef = React.useRef<boolean>(true);
   const didInitScrollRef = React.useRef<boolean>(false);
@@ -531,6 +578,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                 sender: (m as any).senderType === "ADMIN" ? "ADMIN" : "USER",
                 content: String((m as any).content ?? ""),
                 createdAt: (m as any).createdAt ?? new Date().toISOString(),
+                edited: (m as any).edited || false, // 백엔드에서 받은 edited 상태 사용
               };
               // 방금 내가 보낸 메시지(STOMP 에코)면 중복 방지
               if ((m as any).senderType === "ADMIN" && lastSentRef.current && lastSentRef.current.content === newMsg.content && (Date.now() - lastSentRef.current.at) < 5000) {
@@ -592,6 +640,24 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                 const isCurrentThread = messageThreadId === threadId;
                 const isChatTab = activeTabRef.current === "chat";
                 
+                // 메시지가 온 스레드의 채널 ID 확인
+                const messageChannelId = (m as any).channelId;
+                const isCurrentChannel = messageChannelId === selectedChannelId;
+                
+                // 디버깅용 로그
+                console.log("메시지 수신:", {
+                  messageThreadId,
+                  messageChannelId,
+                  selectedChannelId,
+                  selectedThreadId: threadId,
+                  isCurrentPage,
+                  isCurrentThread,
+                  isCurrentChannel,
+                  isChatTab,
+                  messageSender,
+                  messageUserName
+                });
+                
                 // 현재 스레드에서 메시지 수신 시 읽음 처리 (채팅 탭에 있을 때만)
                 if (isCurrentThread && isChatTab) {
                   // 즉시 읽음 처리
@@ -620,7 +686,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                   } catch {}
                 }
                 // 3. 같은 채널 다른 상대와 대화 중이라면 채널에 뱃지, 누가 보냈는지 토스트 띄워줘
-                else if (isCurrentPage && !isCurrentThread) {
+                else if (isCurrentPage && isCurrentChannel && !isCurrentThread) {
                   // 채널 뱃지 업데이트 (즉시)
                   if (channelsPanelRef.current) {
                     channelsPanelRef.current.refreshChannels();
@@ -637,7 +703,24 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                     }); 
                   } catch {}
                 }
-                // 4. 다른 메뉴에 가 있다면 (/cms/channel) 에 가 있을 경우 메뉴, 채널에 뱃지, 대화상대에 뱃지와 어떤 채널의 누가 보냈는지 토스트 띄워줘
+                // 4. 다른 채널에서 메시지가 온 경우
+                else if (isCurrentPage && !isCurrentChannel) {
+                  // 채널 뱃지 업데이트 (즉시)
+                  if (channelsPanelRef.current) {
+                    channelsPanelRef.current.refreshChannels();
+                  }
+                  // 전역 뱃지 업데이트
+                  incrementTotalUnreadCount();
+                  // 토스트 표시
+                  try { 
+                    toaster.create({ 
+                      title: "새 메시지 도착", 
+                      type: "info",
+                      description: `${messageUserName}님의 새 메시지`
+                    }); 
+                  } catch {}
+                }
+                // 5. 다른 메뉴에 가 있다면 (/cms/channel) 에 가 있을 경우 메뉴, 채널에 뱃지, 대화상대에 뱃지와 어떤 채널의 누가 보냈는지 토스트 띄워줘
                 else if (!isCurrentPage) {
                   // 채널 뱃지 업데이트 (즉시)
                   if (channelsPanelRef.current) {
@@ -739,7 +822,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
         sender: sm.senderType === "ADMIN" ? "ADMIN" as const : "USER" as const,
         content: String(sm.content ?? ""),
         createdAt: sm.createdAt,
-        edited: false, // 임시로 모든 메시지의 edited 상태를 false로 설정
+        edited: sm.edited || false, // 백엔드에서 받은 edited 상태 사용
       } as Message;
       if (attachments && attachments.length > 0) {
         const a0 = attachments[0];
@@ -1193,6 +1276,8 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                         src: downloadUrl,
                         alt: f.originName
                       });
+                      // 현재 스크롤 위치 저장
+                      savedScrollPositionRef.current = window.scrollY;
                       // 마운트 후 오픈으로 전환하여 슬라이드 인 애니메이션 보장
                       setIsDrawerMounted(true);
                       requestAnimationFrame(() => setIsDrawerOpen(true));
@@ -1244,7 +1329,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
           {/* 첨부파일 탭 내에서만 나오는 이미지 미리보기 Drawer */}
           {isDrawerMounted && (
             <Box
-              position="absolute"
+              position="fixed"
               top={0}
               right={0}
               bottom={0}
@@ -1255,8 +1340,16 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
               flexDirection="column"
               transform={isDrawerOpen ? "translateX(0)" : "translateX(100%)"}
               transition="transform 0.3s ease-in-out"
-              onTransitionEnd={() => { if (!isDrawerOpen) { setIsDrawerMounted(false); setSelectedImage(null); } }}
+              onTransitionEnd={() => { 
+                if (!isDrawerOpen) { 
+                  setIsDrawerMounted(false); 
+                  setSelectedImage(null);
+                  // 스크롤 위치 복원
+                  window.scrollTo(0, savedScrollPositionRef.current);
+                } 
+              }}
               overflow="hidden"
+              data-drawer-container
               // 미리보기 시 모든 스크롤 완전 차단
               onWheel={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onTouchMove={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -1267,6 +1360,21 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                 overflowY: 'hidden'
               } as React.CSSProperties}
             >
+              {/* 배경 클릭으로 닫기 */}
+              <Box
+                position="absolute"
+                top={0}
+                right={0}
+                bottom={0}
+                left={0}
+                onClick={() => {
+                  setIsDrawerOpen(false);
+                  setIsImageModalOpen(false);
+                  document.body.style.overflow = 'auto';
+                  window.scrollTo(0, savedScrollPositionRef.current);
+                }}
+                zIndex={-1}
+              />
               {/* 헤더 */}
               <Box
                 p={4}
@@ -1279,6 +1387,8 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                 position="relative"
                 flexShrink={0}
                 boxShadow="sm"
+                zIndex={1}
+                onClick={(e) => e.stopPropagation()}
               >
                 {/* 왼쪽 상단 닫기 버튼 */}
                 <Button
@@ -1292,8 +1402,9 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                   onClick={() => { 
                     setIsDrawerOpen(false); 
                     setIsImageModalOpen(false);
-                    // 미리보기 닫힐 때 페이지 스크롤 복원
+                    // 미리보기 닫힐 때 페이지 스크롤 복원 및 위치 복원
                     document.body.style.overflow = 'auto';
+                    window.scrollTo(0, savedScrollPositionRef.current);
                   }}
                   borderRadius="full"
                   w="32px"
@@ -1301,19 +1412,26 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                   p={0}
                   _hover={{ bg: "gray.200" }}
                 >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
+                  <Image
+                    src="/images/icons/arrow.png"
+                    alt="닫기"
+                    width="8"
+                    height="8"
+                    style={{
+                      filter: "brightness(0) saturate(100%) invert(27%) sepia(100%) saturate(2000%) hue-rotate(200deg) brightness(100%) contrast(100%)",
+                      transform: "rotate(180deg)"
+                    }}
+                  />
                 </Button>
                 
                 {/* 중앙 타이틀 */}
-                <Text 
-                  fontWeight="semibold" 
-                  fontSize="md" 
+                <Text
+                  fontWeight="semibold"
+                  fontSize="md"
                   color="gray.800"
                   textAlign="center"
-                  overflow="hidden" 
-                  textOverflow="ellipsis" 
+                  overflow="hidden"
+                  textOverflow="ellipsis"
                   whiteSpace="nowrap"
                   maxW="calc(100% - 80px)"
                 >
@@ -1335,6 +1453,14 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                 h="100%"
                 maxW="100%"
                 maxH="100%"
+                zIndex={1}
+                onClick={() => {
+                  setIsDrawerOpen(false);
+                  setIsImageModalOpen(false);
+                  document.body.style.overflow = 'auto';
+                  window.scrollTo(0, savedScrollPositionRef.current);
+                }}
+                cursor="pointer"
                 // 스크롤 완전 차단
                 onWheel={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onTouchMove={(e) => { e.preventDefault(); e.stopPropagation(); }}

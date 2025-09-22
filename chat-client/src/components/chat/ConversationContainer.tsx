@@ -10,11 +10,13 @@ import { useQueryClient } from "@tanstack/react-query";
 interface ConversationContainerProps {
   selectedThreadId: number | null;
   compact?: boolean;
+  uuid?: string | null;
 }
 
 export const ConversationContainer = ({
   selectedThreadId,
   compact,
+  uuid,
 }: ConversationContainerProps) => {
   const [activeTab, setActiveTab] = useState<"chat" | "attachments">("chat");
   const [newMsgCount, setNewMsgCount] = useState<number>(0);
@@ -92,7 +94,7 @@ export const ConversationContainer = ({
       </Flex>
       <Box flex="1" overflow="hidden" minH={0}>
         {activeTab === "chat" ? (
-          <Conversation selectedThreadId={selectedThreadId} compact={compact} />
+          <Conversation selectedThreadId={selectedThreadId} compact={compact} uuid={uuid} />
         ) : (
           <AttachmentList selectedThreadId={selectedThreadId} />
         )}
