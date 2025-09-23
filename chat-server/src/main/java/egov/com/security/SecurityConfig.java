@@ -93,7 +93,8 @@ public class SecurityConfig {
 				"/api/v1/nice/checkplus/**",
 				"/api/v1/group-reservations",
 				"/api/v1/external/**",
-				"/api/v1/cms/chat/config/validate/**");
+				"/api/v1/cms/chat/config/validate/**",
+				"/api/v1/cms/chat/business-hours/**");
 		for (String pattern : permitAllAntPatterns) {
 			matchers.add(new AntPathRequestMatcher(pattern));
 		}
@@ -142,7 +143,7 @@ public class SecurityConfig {
 						.antMatchers(HttpMethod.PUT, "/api/v1/cms/bbs/article/**").authenticated()
 						.antMatchers(HttpMethod.DELETE, "/api/v1/cms/bbs/article/**").authenticated()
 						// Chat API security rules
-						.antMatchers(HttpMethod.POST, "/api/v1/cms/chat/threads/*/read").hasRole("ADMIN")
+						.antMatchers(HttpMethod.POST, "/api/v1/cms/chat/threads/*/read").authenticated()
 						.antMatchers("/api/v1/chat/**").authenticated()
 						.antMatchers(
 								HttpMethod.POST, "/api/v1/cms/enterprises")

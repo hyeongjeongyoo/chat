@@ -24,10 +24,10 @@ export const useChatMessages = (threadId?: number): UseChatMessagesResult => {
     fetchNextPage,
     hasNextPage,
   } = useInfiniteQuery<SpringPage<ChatMessageDto>>({
-    queryKey: ["chat", "messages", threadId ?? 0],
+    queryKey: ["chat", "messages", threadId || "none"],
     queryFn: async ({ pageParam = "LAST" }) => {
       console.log("🔍 [useChat] queryFn called - threadId:", threadId, "pageParam:", pageParam);
-      if (!threadId) return { content: [], first: true, last: true, number: 0, totalPages: 0 } as SpringPage<ChatMessageDto>;
+      if (!threadId || threadId <= 0) return { content: [], first: true, last: true, number: 0, totalPages: 0 } as SpringPage<ChatMessageDto>;
       if (pageParam === "LAST") {
         // 총 페이지 파악 후 마지막 페이지 로드
         console.log("🔍 [useChat] Loading LAST page for threadId:", threadId);
@@ -88,7 +88,8 @@ export const useChatMessages = (threadId?: number): UseChatMessagesResult => {
   const deleteMessage = async (_params: { messageId: number }) => {
     await chatApi.deleteMessage(_params.messageId, { actor: "admin" });
     // 캐시에서 제거
-    queryClient.setQueryData(["chat", "messages", threadId ?? 0], (old: any) => {
+    if (!threadId || threadId <= 0) return;
+    queryClient.setQueryData(["chat", "messages", threadId], (old: any) => {
       if (!old?.pages) return old;
       const newPages = old.pages.map((p: any) => ({
         ...p,

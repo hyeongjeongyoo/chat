@@ -17,8 +17,8 @@ public class ChatSocketController {
     private final SimpMessagingTemplate messagingTemplate;
 
     public ChatSocketController(ChatService chatService,
-                                ChatThreadRepository chatThreadRepository,
-                                SimpMessagingTemplate messagingTemplate) {
+            ChatThreadRepository chatThreadRepository,
+            SimpMessagingTemplate messagingTemplate) {
         this.chatService = chatService;
         this.chatThreadRepository = chatThreadRepository;
         this.messagingTemplate = messagingTemplate;
@@ -40,44 +40,137 @@ public class ChatSocketController {
     }
 
     public static class ChatTextMessage {
+
         private String senderType;
         private String content;
         private String actor;
 
-        public String getSenderType() { return senderType; }
-        public void setSenderType(String senderType) { this.senderType = senderType; }
-        public String getContent() { return content; }
-        public void setContent(String content) { this.content = content; }
-        public String getActor() { return actor; }
-        public void setActor(String actor) { this.actor = actor; }
+        public String getSenderType() {
+            return senderType;
+        }
+
+        public void setSenderType(String senderType) {
+            this.senderType = senderType;
+        }
+
+        public String getContent() {
+            return content;
+        }
+
+        public void setContent(String content) {
+            this.content = content;
+        }
+
+        public String getActor() {
+            return actor;
+        }
+
+        public void setActor(String actor) {
+            this.actor = actor;
+        }
     }
 
     public static class OutboundMessage {
+
         private Long id;
         private Long threadId;
+        private Long channelId;
         private String senderType;
         private String messageType;
         private String content;
         private String fileName;
         private String fileUrl;
         private java.time.LocalDateTime createdAt;
+        private String userName;
+        private String userIdentifier;
 
-        public Long getId() { return id; }
-        public void setId(Long id) { this.id = id; }
-        public Long getThreadId() { return threadId; }
-        public void setThreadId(Long threadId) { this.threadId = threadId; }
-        public String getSenderType() { return senderType; }
-        public void setSenderType(String senderType) { this.senderType = senderType; }
-        public String getMessageType() { return messageType; }
-        public void setMessageType(String messageType) { this.messageType = messageType; }
-        public String getContent() { return content; }
-        public void setContent(String content) { this.content = content; }
-        public String getFileName() { return fileName; }
-        public void setFileName(String fileName) { this.fileName = fileName; }
-        public String getFileUrl() { return fileUrl; }
-        public void setFileUrl(String fileUrl) { this.fileUrl = fileUrl; }
-        public java.time.LocalDateTime getCreatedAt() { return createdAt; }
-        public void setCreatedAt(java.time.LocalDateTime createdAt) { this.createdAt = createdAt; }
+        public Long getId() {
+            return id;
+        }
+
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public Long getThreadId() {
+            return threadId;
+        }
+
+        public void setThreadId(Long threadId) {
+            this.threadId = threadId;
+        }
+
+        public String getSenderType() {
+            return senderType;
+        }
+
+        public void setSenderType(String senderType) {
+            this.senderType = senderType;
+        }
+
+        public String getMessageType() {
+            return messageType;
+        }
+
+        public void setMessageType(String messageType) {
+            this.messageType = messageType;
+        }
+
+        public String getContent() {
+            return content;
+        }
+
+        public void setContent(String content) {
+            this.content = content;
+        }
+
+        public String getFileName() {
+            return fileName;
+        }
+
+        public void setFileName(String fileName) {
+            this.fileName = fileName;
+        }
+
+        public String getFileUrl() {
+            return fileUrl;
+        }
+
+        public void setFileUrl(String fileUrl) {
+            this.fileUrl = fileUrl;
+        }
+
+        public java.time.LocalDateTime getCreatedAt() {
+            return createdAt;
+        }
+
+        public void setCreatedAt(java.time.LocalDateTime createdAt) {
+            this.createdAt = createdAt;
+        }
+
+        public Long getChannelId() {
+            return channelId;
+        }
+
+        public void setChannelId(Long channelId) {
+            this.channelId = channelId;
+        }
+
+        public String getUserName() {
+            return userName;
+        }
+
+        public void setUserName(String userName) {
+            this.userName = userName;
+        }
+
+        public String getUserIdentifier() {
+            return userIdentifier;
+        }
+
+        public void setUserIdentifier(String userIdentifier) {
+            this.userIdentifier = userIdentifier;
+        }
 
         public static OutboundMessage fromEntity(cms.chat.domain.ChatMessage m) {
             OutboundMessage dto = new OutboundMessage();
@@ -89,9 +182,26 @@ public class ChatSocketController {
             dto.setFileName(m.getFileName());
             dto.setFileUrl(m.getFileUrl());
             dto.setCreatedAt(m.getCreatedAt());
+
+            // 🔥 NEW: 채널 ID 및 사용자 정보 추가
+            try {
+                cms.chat.domain.ChatThread thread = m.getThread();
+                if (thread != null) {
+                    // 채널 ID 설정
+                    cms.chat.domain.ChatChannel channel = thread.getChannel();
+                    if (channel != null) {
+                        dto.setChannelId(channel.getId());
+                    }
+
+                    // 사용자 정보 설정
+                    dto.setUserName(thread.getUserName());
+                    dto.setUserIdentifier(thread.getUserIdentifier());
+                }
+            } catch (Exception e) {
+                // 사용자 정보 설정 실패 시 무시
+            }
+
             return dto;
         }
     }
 }
-
-

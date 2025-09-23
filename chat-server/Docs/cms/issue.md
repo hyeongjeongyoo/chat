@@ -25,7 +25,7 @@
 
   * `application.yml`에서 `springdoc.api-docs.path`와 `springdoc.swagger-ui.path` 경로를 확인 및 수정
   * `@Operation`, `@Tag` 어노테이션으로 Swagger 문서화 설정을 명확히 확인
-  * `curl -I 'http://localhost:8081/swagger-ui/index.html?configUrl=/api/v1/v3/api-docs'` 를 통해 경로가 맞는지 확인
+  * `curl -I 'http://localhost:8080/swagger-ui/index.html?configUrl=/api/v1/v3/api-docs'` 를 통해 경로가 맞는지 확인
 
 ---
 
@@ -120,7 +120,7 @@
   * Nginx 설정에서 `proxy_pass` 경로가 올바르게 설정되지 않거나, Tomcat의 포트와 일치하지 않음
 * **조치**:
 
-  * Nginx 설정에서 `proxy_pass` 경로가 Tomcat의 `localhost:8081`과 정확히 일치하도록 설정
+  * Nginx 설정에서 `proxy_pass` 경로가 Tomcat의 `localhost:8080`과 정확히 일치하도록 설정
   * `nginx.conf` 파일에 `proxy_set_header`로 헤더 값을 전달하도록 수정
 
 ---

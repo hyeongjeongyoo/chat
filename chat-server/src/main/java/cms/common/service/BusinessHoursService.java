@@ -1,6 +1,7 @@
 package cms.common.service;
 
 import cms.calendar.repository.HolidayOverrideRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
@@ -8,10 +9,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.EnumSet;
+import java.util.Optional;
 
 @Service
 public class BusinessHoursService {
-    private final HolidayOverrideRepository holidayRepo;
+    private final Optional<HolidayOverrideRepository> holidayRepo;
 
     // Configurable hours (could be moved to application.yml)
     private final LocalTime start = LocalTime.of(9, 0);
@@ -20,18 +22,27 @@ public class BusinessHoursService {
             DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
             DayOfWeek.THURSDAY, DayOfWeek.FRIDAY);
 
-    public BusinessHoursService(HolidayOverrideRepository holidayRepo) {
-        this.holidayRepo = holidayRepo;
+    public BusinessHoursService(@Autowired(required = false) HolidayOverrideRepository holidayRepo) {
+        this.holidayRepo = Optional.ofNullable(holidayRepo);
     }
 
     public boolean isOpen(LocalDateTime when) {
         LocalDate d = when.toLocalDate();
         DayOfWeek dow = d.getDayOfWeek();
         if (!workdays.contains(dow)) return false;
-        // Holiday overrides
-        boolean overriddenClosed = holidayRepo.findByHolidayDate(d).stream()
-                .anyMatch(h -> "Y".equalsIgnoreCase(h.getClosedYn()));
-        if (overriddenClosed) return false;
+        
+        // Holiday overrides (only if repository is available)
+        if (holidayRepo.isPresent()) {
+            try {
+                boolean overriddenClosed = holidayRepo.get().findByHolidayDate(d).stream()
+                        .anyMatch(h -> "Y".equalsIgnoreCase(h.getClosedYn()));
+                if (overriddenClosed) return false;
+            } catch (Exception e) {
+                // If holiday table doesn't exist or any DB error, just ignore holiday checks
+                System.err.println("Warning: Holiday override check failed, ignoring: " + e.getMessage());
+            }
+        }
+        
         LocalTime t = when.toLocalTime();
         return !t.isBefore(start) && t.isBefore(end);
     }

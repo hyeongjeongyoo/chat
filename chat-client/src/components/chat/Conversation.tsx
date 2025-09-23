@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useLayoutEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from "react";
 import { Box, Flex, Text, Icon, Input, Button, Badge, IconButton, Image, Link, Drawer, Portal } from "@chakra-ui/react";
 import { LuSend, LuPaperclip, LuPencil, LuTrash2, LuCheck, LuRotateCcw, LuDownload, LuFile } from "react-icons/lu";
 import { useChatMessages } from "../../hooks/useChat";
@@ -91,7 +91,8 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
         if (m && typeof m === "object" && "type" in m) {
           if (m.type === "message.deleted") {
             const idToRemove = m.id ?? m.messageId;
-            const tid = m.threadId ?? selectedThreadId ?? 0;
+            const tid = m.threadId ?? selectedThreadId;
+            if (!tid || tid <= 0) return;
             queryClient.setQueryData(
               ["chat", "messages", tid],
               (old: any) => {
@@ -107,7 +108,8 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
           }
             if (m.type === "message.updated") {
               const idToUpdate = m.id ?? m.messageId;
-              const tid = m.threadId ?? selectedThreadId ?? 0;
+              const tid = m.threadId ?? selectedThreadId;
+              if (!tid || tid <= 0) return;
               const newContent: string | undefined = m.content;
               if (idToUpdate != null && newContent != null) {
                 queryClient.setQueryData(
@@ -580,7 +582,7 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
 
             const isEditing = editingMessageId === message.id && !isImage;
             return (
-              <>
+              <React.Fragment key={`msg-${message.id}-${idx}`}>
                 {showDate && (
                   <Flex key={`sep-${curKey}-${idx}`} justify="center" my={2}>
                     <Box px={3} py={1} bg="gray.100" color="gray.600" borderRadius="full" fontSize="xs">
@@ -588,7 +590,7 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
                     </Box>
                   </Flex>
                 )}
-                <Flex key={message.id} direction="column" align={isUser ? "flex-end" : "flex-start"}>
+                <Flex direction="column" align={isUser ? "flex-end" : "flex-start"}>
                 <Box
                   maxW="70%"
                   bg={isUser ? "blue.500" : "gray.100"}
@@ -744,7 +746,7 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
                   </Flex>
                 )}
               </Flex>
-              </>
+              </React.Fragment>
             );
           })
         )}

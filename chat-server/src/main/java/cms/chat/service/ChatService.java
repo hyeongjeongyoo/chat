@@ -101,11 +101,26 @@ public class ChatService {
                 dto.put("createdAt", savedWelcomeMessage.getCreatedAt());
                 dto.put("edited", false);
                 
+                // 채널 ID 및 사용자 정보 추가 (알림 로직에서 사용)
+                ChatChannel channel = thread.getChannel();
+                if (channel != null) {
+                    dto.put("channelId", channel.getId());
+                }
+                
+                // 사용자 정보 추가
+                String userName = thread.getUserName();
+                String userIdentifier = thread.getUserIdentifier();
+                if (userName != null && !userName.isEmpty()) {
+                    dto.put("userName", userName);
+                }
+                if (userIdentifier != null && !userIdentifier.isEmpty()) {
+                    dto.put("userIdentifier", userIdentifier);
+                }
+                
                 // 스레드별 구독자에게 전송
                 messagingTemplate.convertAndSend("/sub/chat/" + thread.getId(), dto);
                 
                 // 채널별 구독자에게도 전송
-                ChatChannel channel = thread.getChannel();
                 if (channel != null) {
                     messagingTemplate.convertAndSend("/sub/chat/channel/" + channel.getId(), dto);
                 }

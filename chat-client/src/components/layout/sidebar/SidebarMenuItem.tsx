@@ -32,33 +32,34 @@ export function SidebarMenuItem({
   const showBadge = item.path === "/cms/chat" && (totalUnreadCount ?? 0) > 0;
 
   return (
-    <Link
-      href={item.path}
-      style={{
-        textDecoration: "none",
-        transition: "all 0.2s ease-in-out",
-      }}
-      passHref
-    >
-      <Tooltip
-        content={isSidebarOpen ? "" : item.label}
-        disabled={isSidebarOpen}
-        positioning={{ placement: "right" }}
-        openDelay={50}
-        closeDelay={200}
-        contentProps={{
-          css: {
-            width: "80px",
-            textAlign: "center",
-            height: "24px",
-            alignItems: "center",
-            lineHeight: "16px",
-            fontSize: "12px",
-            bg: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-          },
+    <Box position="relative">
+      <Link
+        href={item.path}
+        style={{
+          textDecoration: "none",
+          transition: "all 0.2s ease-in-out",
         }}
+        passHref
       >
-        <Button
+        <Tooltip
+          content={isSidebarOpen ? "" : item.label}
+          disabled={isSidebarOpen}
+          positioning={{ placement: "right" }}
+          openDelay={50}
+          closeDelay={200}
+          contentProps={{
+            css: {
+              width: "80px",
+              textAlign: "center",
+              height: "24px",
+              alignItems: "center",
+              lineHeight: "16px",
+              fontSize: "12px",
+              bg: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+            },
+          }}
+        >
+          <Button
           variant="ghost"
           h="10"
           mb="2"
@@ -123,25 +124,32 @@ export function SidebarMenuItem({
           >
             {item.label}
           </Text>
-          {showBadge && (
-            <Badge
-              bg="red.500"
-              color="white"
-              borderRadius="full"
-              px={2}
-              py={1}
-              fontSize="10px"
-              fontWeight="bold"
-              minW="18px"
-              textAlign="center"
-              ml="auto"
-              mr={isSidebarOpen ? 2 : 0}
-            >
-              {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
-            </Badge>
-          )}
         </Button>
       </Tooltip>
     </Link>
+    
+    {/* 뱃지를 메뉴 아이템 기준으로 절대 위치에 배치 */}
+    {showBadge && (
+      <Badge
+        position="absolute"
+        top="13px"
+        right="20px"
+        bg="red.500"
+        color="white"
+        borderRadius="full"
+        px={2}
+        py={1}
+        fontSize="10px"
+        fontWeight="bold"
+        minW="18px"
+        textAlign="center"
+        zIndex="1"
+        transform="translate(25%, -25%)"
+        boxShadow="0 1px 3px rgba(0, 0, 0, 0.3)"
+      >
+        {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
+      </Badge>
+    )}
+  </Box>
   );
 }

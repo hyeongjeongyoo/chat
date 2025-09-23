@@ -77,42 +77,27 @@ public class ChatController {
             try {
                 ChatThread thread = chatThreadRepository.findById(threadId).orElse(null);
                 if (thread != null) {
-                    Long channelId = thread.getChannel().getId();
+                    // 채널 정보 설정
+                    Long channelId = thread.getChannel() != null ? thread.getChannel().getId() : null;
                     dto.setChannelId(channelId);
                     
                     // 사용자 정보 추가
                     String userName = thread.getUserName();
                     String userIdentifier = thread.getUserIdentifier();
-                    if (userName != null && !userName.isEmpty()) {
-                        // userName을 dto에 설정하는 방법 (reflection으로 직접 설정)
-                        try {
-                            java.lang.reflect.Field userNameField = dto.getClass().getDeclaredField("userName");
-                            userNameField.setAccessible(true);
-                            userNameField.set(dto, userName);
-                        } catch (Exception ignored) {
-                            // userName 필드가 없으면 무시
-                        }
-                    }
-                    if (userIdentifier != null && !userIdentifier.isEmpty()) {
-                        // userIdentifier를 dto에 설정하는 방법
-                        try {
-                            java.lang.reflect.Field userIdentifierField = dto.getClass().getDeclaredField("userIdentifier");
-                            userIdentifierField.setAccessible(true);
-                            userIdentifierField.set(dto, userIdentifier);
-                        } catch (Exception ignored) {
-                            // userIdentifier 필드가 없으면 무시
-                        }
-                    }
                     
-                    System.out.println("🔔 [백엔드] toDto - 설정 완료: channelId=" + channelId + ", threadId=" + threadId + 
-                                     ", userName=" + userName + ", userIdentifier=" + userIdentifier);
+                    // DTO에 설정
+                    dto.setUserName(userName);
+                    dto.setUserIdentifier(userIdentifier);
                 } else {
-                    System.err.println("🔔 [백엔드] toDto - thread not found for threadId: " + threadId);
+                    dto.setChannelId(null);
+                    dto.setUserName(null);
+                    dto.setUserIdentifier(null);
                 }
             } catch (Exception e) {
-                // 채널 ID 설정 실패 시 무시
-                System.err.println("🔔 [백엔드] toDto - Failed to set channelId/userInfo: " + e.getMessage());
-                e.printStackTrace();
+                // 안전하게 null 설정
+                dto.setChannelId(null);
+                dto.setUserName(null);
+                dto.setUserIdentifier(null);
             }
             java.time.LocalDateTime created = (java.time.LocalDateTime) getCreatedAt.invoke(message);
             dto.setCreatedAt(created != null ? created.toString() : null);
@@ -533,21 +518,16 @@ public class ChatController {
             
             try {
                 // 스레드별 구독자에게 전송
-                System.out.println("🔔 [백엔드] 스레드 구독자에게 메시지 전송: /sub/chat/" + threadId);
                 messagingTemplate.convertAndSend("/sub/chat/" + threadId, dto);
                 
                 // 채널별 구독자에게도 전송 (다른 스레드에 있는 사용자도 알림 받을 수 있도록)
                 ChatChannel channel = thread.getChannel();
                 if (channel != null) {
                     String channelTopic = "/sub/chat/channel/" + channel.getId();
-                    System.out.println("🔔 [백엔드] 채널 구독자에게 메시지 전송: " + channelTopic);
-                    System.out.println("🔔 [백엔드] 전송할 메시지 내용 - ID: " + dto.getId() + ", threadId: " + dto.getThreadId() + ", channelId: " + dto.getChannelId() + ", content: " + dto.getContent());
                     messagingTemplate.convertAndSend(channelTopic, dto);
-                } else {
-                    System.out.println("🔔 [백엔드] 채널이 null이어서 채널 구독자에게 전송하지 않음");
                 }
             } catch (Exception e) {
-                System.err.println("🔔 [백엔드] WebSocket 메시지 전송 실패: " + e.getMessage());
+                // WebSocket 메시지 전송 실패 시 무시
             }
 
             // Closed hours auto-reply (single-shot throttling simplified with recent timestamp check in service layer could be added later)

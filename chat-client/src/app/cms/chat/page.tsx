@@ -6,7 +6,7 @@ import { toaster } from "@/components/ui/toaster";
 import { GridSection } from "@/components/ui/grid-section";
 import { useColors } from "@/styles/theme";
 import { LuPencil, LuTrash2, LuCheck, LuUndo2, LuPaperclip, LuFile, LuX, LuDownload, LuImage, LuChevronRight } from "react-icons/lu";
-import { chatApi } from "@/lib/api/chat";
+import { chatApi, SpringPage } from "@/lib/api/chat";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { fileApi, type UploadedFileDto } from "@/lib/api/file";
 import { ChatStompClient } from "@/lib/ws/chatSocket";
@@ -476,6 +476,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
   const isProgrammaticScrollRef = React.useRef<boolean>(false);
   const [backendThreadId, setBackendThreadId] = React.useState<number | null>(null);
   const stompRef = React.useRef<ChatStompClient | null>(null);
+  const channelStompRef = React.useRef<ChatStompClient | null>(null); // 채널 구독 전용
   const [imageLoadedMap, setImageLoadedMap] = React.useState<Record<number, boolean>>({});
   // 최근 업로드한 파일명 -> 다운로드 URL 매핑 (즉시 활성화용)
   const lastUploadedMapRef = React.useRef<Map<string, string>>(new Map());
@@ -540,11 +541,14 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
       return { threadId: explicitBackendThreadId };
     }
     const mock = getMockThread();
-    if (!mock) return { threadId: selectedThreadId };
-    // 채널 코드/이름 확보
-    const channel = null as any;
-    // 채널 ID 확보
-    let backendChannelId = undefined as any;
+    if (!mock) {
+      // selectedThreadId가 유효하지 않으면 null 반환
+      if (!selectedThreadId || selectedThreadId <= 0) {
+        throw new Error("Valid threadId required");
+      }
+      return { threadId: selectedThreadId };
+    }
+
     // 스레드 ID 확보 (mock -> backend 매핑)
     return { threadId: explicitBackendThreadId ?? selectedThreadId };
   }, [getMockThread, selectedThreadId, explicitBackendThreadId]);
@@ -667,9 +671,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                 // 2) 동일 id 중복 방지
                 return cleaned.some(x => x.id === newMsg.id) ? cleaned : [...cleaned, newMsg];
               });
-              if (listRef.current) {
-                listRef.current.scrollTop = listRef.current.scrollHeight;
-              }
+              // 스마트 스크롤로 처리되므로 강제 스크롤 제거
               
               // 알림 및 뱃지 로직 - USER 메시지만 처리 (ADMIN 메시지는 뱃지/토스트 없음)
               const messageThreadId = (m as any).threadId;
@@ -685,9 +687,10 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                 const isCurrentThread = messageThreadId === threadId;
                 const isChatTab = activeTabRef.current === "chat";
                 
-                // 메시지가 온 스레드의 채널 ID 확인
-                const messageChannelId = (m as any).channelId;
-                const isCurrentChannel = messageChannelId === selectedChannelId;
+                      // 메시지가 온 스레드의 채널 ID 확인 (백엔드에서 channelId로 전송됨)
+                      const messageChannelId = (m as any).channelId;
+                      const isCurrentChannel = messageChannelId === selectedChannelId;
+                      
                 
                 // 디버깅용 로그
                 console.log("메시지 수신:", {
@@ -715,56 +718,21 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                   }).catch(() => {});
                 }
                 
-                // 1. 같은 채널 같은 대화에서 메시지가 온다면 알림, 토스트 필요없음
-                if (isCurrentPage && isCurrentThread && isChatTab) {
-                  // 아무것도 하지 않음 (알림 없음)
-                }
-                // 2. 같은 채널 같은 대화 탭 첨부파일에 있을 경우 대화 탭에 뱃지, 토스트 띄워줘
-                else if (isCurrentPage && isCurrentThread && !isChatTab) {
-                  setNewMsgCount((v) => v + 1);
-                  try { 
-                    toaster.create({ 
-                      title: "새 메시지가 도착했습니다.", 
-                      type: "info",
-                      description: `${currentThreadName}님의 새 메시지`
-                    }); 
-                  } catch {}
-                }
-                // 3. 같은 채널 다른 상대와 대화 중이라면 - 채널별 구독에서 처리하므로 여기서는 제거
-                // 3. 다른 채널에서 메시지가 온 경우
-                else if (isCurrentPage && !isCurrentChannel) {
-                  // 채널 뱃지 업데이트 (즉시)
+                // 단순화: 모든 USER 메시지에 대해 토스트 표시
+                // 뱃지 업데이트
+                if (isCurrentPage) {
                   if (channelsPanelRef.current) {
                     channelsPanelRef.current.refreshChannels();
                   }
-                  // 전역 뱃지 업데이트
-                  incrementTotalUnreadCount();
-                  // 토스트 표시
-                  try { 
-                    toaster.create({ 
-                      title: "새 메시지 도착", 
-                      type: "info",
-                      description: `${messageUserName}님의 새 메시지`
-                    }); 
-                  } catch {}
-                }
-                // 4. 다른 메뉴에 가 있다면 (/cms/channel) 에 가 있을 경우 메뉴, 채널에 뱃지, 대화상대에 뱃지와 어떤 채널의 누가 보냈는지 토스트 띄워줘
-                else if (!isCurrentPage) {
-                  // 채널 뱃지 업데이트 (즉시)
-                  if (channelsPanelRef.current) {
-                    channelsPanelRef.current.refreshChannels();
+                  if (!isCurrentThread) {
+                    onThreadsRefresh();
                   }
-                  // 전역 뱃지 업데이트
-                  incrementTotalUnreadCount();
-                  // 토스트 표시
-                  try { 
-                    toaster.create({ 
-                      title: "새 메시지 도착", 
-                      type: "info",
-                      description: `${messageUserName}님의 새 메시지`
-                    }); 
-                  } catch {}
+                  if (isCurrentThread && !isChatTab) {
+                    setNewMsgCount((v) => v + 1);
+                  }
                 }
+                incrementTotalUnreadCount();
+
               // refetch()는 중복 유발 가능성이 있어 실시간 수신시 생략
             }
           });
@@ -778,102 +746,104 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
     return () => { mounted = false; };
   }, [ensureBackendIds]);
 
-  // 채널 구독 전용 useEffect (WebSocket 연결 후 실행)
+  // 채널 구독 전용 STOMP 클라이언트 초기화
   React.useEffect(() => {
-    if (!selectedChannelId || !stompRef.current) {
-      console.log("🔔 [채널구독] 조건 불만족:", { selectedChannelId, hasStompRef: !!stompRef.current });
+    if (!channelStompRef.current) {
+      try {
+        const c = new ChatStompClient();
+        // 임시 스레드 ID로 연결 (채널 구독만 사용)
+        c.connect(1, () => {}, () => {
+        });
+        channelStompRef.current = c;
+      } catch (error) {
+        console.error("🔔 [채널구독] 채널 전용 STOMP 클라이언트 생성 실패:", error);
+      }
+    }
+
+    return () => {
+      if (channelStompRef.current) {
+        channelStompRef.current.disconnect();
+        channelStompRef.current = null;
+      }
+    };
+  }, []);
+
+  // 현재 채널만 구독 관리 (GlobalChatService가 전체 채널 담당)
+  React.useEffect(() => {
+    // 스레드 전용 또는 채널 전용 STOMP 클라이언트 사용
+    const activeStompRef = stompRef.current || channelStompRef.current;
+    
+    if (!activeStompRef || !selectedChannelId) {
       return;
     }
 
-    // 연결 상태 확인을 위한 주기적 체크
-    const checkAndSubscribe = () => {
-      console.log("🔔 [채널구독] 연결 상태 체크:", {
-        selectedChannelId,
-        hasStompRef: !!stompRef.current,
-        connected: stompRef.current?.client?.connected
-      });
+    // 현재 선택된 채널만 구독
+    const subscribeToCurrentChannel = async () => {
+      try {
+        const channels = await chatApi.getChannels();
+        
+        // 현재 선택된 채널만 찾아서 구독
+        const currentChannel = channels.find(ch => ch.id === selectedChannelId);
+        if (currentChannel) {
+          subscribeToSingleChannel(activeStompRef, currentChannel.id, currentChannel.cmsName || currentChannel.cmsCode);
+        }
+      } catch (error) {
+        
+      }
+    };
 
-      if (stompRef.current?.client?.connected) {
-        console.log("🔔 [채널구독] WebSocket 연결됨, 채널 구독 시작:", selectedChannelId);
-        
-        // 기존 구독 해제
-        stompRef.current.unsubscribeFromChannel();
-        
-        // 새 채널 구독
-        stompRef.current.subscribeToChannel(selectedChannelId, (channelEvt) => {
-          console.log("🔔 [채널구독] 채널 메시지 수신:", channelEvt);
+    // 개별 채널 구독 함수
+    const subscribeToSingleChannel = (client: any, channelId: number, channelName: string) => {
+      
+      client.subscribeToChannel(channelId, (channelEvt: any) => {
+
+        const channelMsg = channelEvt && typeof channelEvt === "object" ? channelEvt : undefined;
+        if (channelMsg) {
+          const messageSender = (channelMsg as any).senderType;
+          const messageThreadId = (channelMsg as any).threadId;
+          const messageUserName = (channelMsg as any).userName || (channelMsg as any).userIdentifier || "알 수 없는 사용자";
+          const messageChannelId = (channelMsg as any).channelId || channelId;
           
-          const channelMsg = channelEvt && typeof channelEvt === "object" ? channelEvt : undefined;
-          if (channelMsg) {
-            const messageSender = (channelMsg as any).senderType;
-            const messageThreadId = (channelMsg as any).threadId;
-            const messageUserName = (channelMsg as any).userName || (channelMsg as any).userIdentifier || "알 수 없는 사용자";
-            // channelId가 undefined면 현재 선택된 채널 ID 사용 (임시 해결책)
-            const messageChannelId = (channelMsg as any).channelId || selectedChannelId;
-            
-            // ADMIN 메시지는 알림 없음
-            if (messageSender === "ADMIN") {
-              console.log("🔔 [채널구독] ADMIN 메시지라서 알림 없음");
-              return;
+          // ADMIN 메시지는 알림 없음
+          if (messageSender === "ADMIN") {
+            return;
+          }
+          
+          // 현재 스레드와 다른 스레드에서 온 메시지만 알림 처리
+          const currentThreadId = selectedThreadId;
+          const isCurrentThread = messageThreadId === currentThreadId;
+          const isCurrentPage = window.location.pathname === "/cms/chat";
+          const isCurrentChannel = messageChannelId === selectedChannelId;
+         
+        
+          // 뱃지 업데이트
+          if (isCurrentPage) {
+            if (channelsPanelRef.current) {
+              channelsPanelRef.current.refreshChannels();
             }
-            
-            // 현재 스레드와 다른 스레드에서 온 메시지만 알림 처리
-            const currentThreadId = selectedThreadId;
-            const isCurrentThread = messageThreadId === currentThreadId;
-            
-            console.log("🔔 [채널구독] 스레드 확인:", { messageThreadId, currentThreadId, isCurrentThread });
-            
-            if (!isCurrentThread) {
-              const isCurrentPage = window.location.pathname === "/cms/chat";
-              const isCurrentChannel = messageChannelId === selectedChannelId;
-              
-              console.log("🔔 [채널구독] 조건 확인:", {
-                isCurrentPage,
-                isCurrentChannel,
-                isCurrentThread,
-                currentChannelName,
-                messageUserName,
-                messageChannelId,
-                selectedChannelId
-              });
-              
-              if (isCurrentPage && isCurrentChannel && !isCurrentThread) {
-                console.log("🔔 [채널구독] 3번 케이스 알림 실행!");
-                
-                // 뱃지 업데이트
-                if (channelsPanelRef.current) {
-                  channelsPanelRef.current.refreshChannels();
-                }
-                onThreadsRefresh();
-                incrementTotalUnreadCount();
-                
-                // 토스트 표시
-                try { 
-                  // 현재 선택된 채널명 가져오기
-                  const currentChannelNameValue = channelMsg?.cmsName || "알 수 없는 채널";
-                  const toastMessage = `${currentChannelNameValue} - ${messageUserName}님의 새 메시지`;
-                  console.log("🔔 [채널구독] 토스트 생성 시도:", toastMessage);
-                  
-                  toaster.create({ 
-                    title: toastMessage, 
-                    type: "info"
-                  }); 
-                  console.log("🔔 [채널구독] 토스트 생성 성공!");
-                } catch (toastError) {
-                  console.error("🔔 [채널구독] 토스트 생성 실패:", toastError);
-                }
-              } else {
-                console.log("🔔 [채널구독] 3번 케이스 조건 불만족 - 알림 없음");
-              }
-            } else {
-              console.log("🔔 [채널구독] 현재 스레드 메시지라서 알림 없음");
+            if (!isCurrentChannel) {
+              onThreadsRefresh();
             }
           }
-        });
+          incrementTotalUnreadCount();
+          
+          // 토스트는 GlobalChatService에서 전역 처리
+        }
+      });
+    };
+
+    // 연결 상태 확인을 위한 주기적 체크
+    const checkAndSubscribe = () => {
+      if (activeStompRef?.client?.connected) {
+        
+        // 기존 구독 해제
+        activeStompRef.unsubscribeFromChannel();
+        
+        // 현재 채널 구독
+        subscribeToCurrentChannel();
         
         return true; // 구독 성공
       } else {
-        console.log("🔔 [채널구독] WebSocket 아직 연결 안됨");
         return false; // 구독 실패
       }
     };
@@ -889,7 +859,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
         clearTimeout(retryTimeout);
       };
     }
-  }, [selectedChannelId]);
+  }, [selectedChannelId]); // 선택된 채널 변경 시 재구독
 
   // Files 탭 활성화 시 현재 스레드의 첨부 목록 로딩
   React.useEffect(() => {
@@ -922,18 +892,24 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
   } = useInfiniteQuery({
     queryKey: ["chat-messages", selectedThreadId],
     queryFn: async ({ pageParam = "LAST" }) => {
-      const { threadId } = await ensureBackendIds();
-      if (pageParam === "LAST") {
-        // 1회성으로 전체 페이지 수 파악 후 마지막 페이지 로드
-        const first = await chatApi.getMessages(threadId, 0, 30);
-        const totalPages = first.totalPages ?? 1;
-        const lastIdx = Math.max(0, totalPages - 1);
-        if (lastIdx === 0) return first;
-        const last = await chatApi.getMessages(threadId, lastIdx, 30);
-        return last;
+      try {
+        const { threadId } = await ensureBackendIds();
+        if (pageParam === "LAST") {
+          // 1회성으로 전체 페이지 수 파악 후 마지막 페이지 로드
+          const first = await chatApi.getMessages(threadId, 0, 30);
+          const totalPages = first.totalPages ?? 1;
+          const lastIdx = Math.max(0, totalPages - 1);
+          if (lastIdx === 0) return first;
+          const last = await chatApi.getMessages(threadId, lastIdx, 30);
+          return last;
+        }
+        const res = await chatApi.getMessages(threadId, pageParam as number, 30);
+        return res;
+      } catch (error) {
+        console.error("메시지 로드 실패:", error);
+        // 기본값 반환으로 에러 방지
+        return { content: [], first: true, last: true, number: 0, totalPages: 0 } as SpringPage<Message>;
       }
-      const res = await chatApi.getMessages(threadId, pageParam as number, 30);
-      return res;
     },
     initialPageParam: "LAST" as any,
     // 위로 스크롤시 더 과거 페이지(번호-1)를 불러옴
@@ -952,7 +928,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
     const toAbs = (url?: string) => !url ? undefined : (url.startsWith("http") ? url : `${apiOrigin}${url}`);
     const toView = (url?: string) => !url ? undefined : url.replace("/download/", "/view/");
     // ASC 정렬: 오래된 페이지가 먼저 오도록 역순으로 펼침 (가장 오래된 -> 최신)
-    const flat = pages.pages.slice().reverse().flatMap(p => p.content).map((sm) => {
+    const flat: Message[] = pages.pages.slice().reverse().flatMap((p: any) => p.content).map((sm: any) => {
       const mt = (sm as any).messageType as string | undefined;
       const fileName = (sm as any).fileName as string | undefined;
       const fileUrl = (sm as any).fileUrl as string | undefined;
@@ -1036,17 +1012,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
     return () => { mounted = false; };
   }, [backendThreadId, messages]);
 
-  // 선택 스레드 변경 시에는 자동 스크롤하지 않음 (사용자가 원하는 위치 유지)
-  // React.useEffect(() => {
-  //   if (listRef.current) {
-  //     const el = listRef.current;
-  //     requestAnimationFrame(() => {
-  //       el.scrollTop = el.scrollHeight;
-  //     });
-  //   }
-  // }, [selectedThreadId]);
-
-  // 새 메시지/낙관적 메시지 변화 시 하단으로 자동 스크롤
+  // 이전 페이지 로딩 시 위치 복원만 처리
   React.useEffect(() => {
     if (!listRef.current) return;
     const el = listRef.current;
@@ -1061,14 +1027,6 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
       isLoadingPrevRef.current = false;
       pendingRestoreRef.current = null;
       return;
-    }
-    // 하단 근처에 있을 때만 자동 스크롤 유지
-    if (autoScrollRef.current) {
-      requestAnimationFrame(() => {
-        isProgrammaticScrollRef.current = true;
-        el.scrollTop = el.scrollHeight;
-        requestAnimationFrame(() => { isProgrammaticScrollRef.current = false; });
-      });
     }
   }, [messages.length, optimistic.length]);
 
@@ -1110,11 +1068,12 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
     return messages.filter(m => m.threadId === tid);
   }, [messages, effectiveThreadId]);
 
-  // 첫 렌더/새로고침 시에도 마지막으로 스크롤
+  // 초기 로딩 시에만 하단으로 스크롤 (chat-popup과 동일한 로직)
   React.useLayoutEffect(() => {
     if (!listRef.current) return;
     const el = listRef.current;
-    // 초기 로딩 시 마지막 페이지 하단으로 스냅 (chat-popup과 동일한 로직)
+    
+    // 초기 로딩 시 마지막 페이지 하단으로 스냅
     if (!didInitScrollRef.current) {
       // 메시지가 하나라도 있으면 하단으로 이동
       if (messages.length > 0) {
@@ -1123,7 +1082,8 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
       }
       return;
     }
-    // 이전 페이지 로딩 직후 위치 복원
+    
+    // 이전 페이지 로딩 직후 위치 복원만 처리
     if (isLoadingPrevRef.current && pendingRestoreRef.current != null) {
       const bottomOffset = pendingRestoreRef.current;
       requestAnimationFrame(() => {
@@ -1134,14 +1094,6 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
       isLoadingPrevRef.current = false;
       pendingRestoreRef.current = null;
       return;
-    }
-    // 하단 근처 유지 모드일 때만 하단 고정
-    if (autoScrollRef.current) {
-      requestAnimationFrame(() => {
-        isProgrammaticScrollRef.current = true;
-        el.scrollTop = el.scrollHeight;
-        requestAnimationFrame(() => { isProgrammaticScrollRef.current = false; });
-      });
     }
   }, [currentMessages.length]);
   React.useEffect(() => {
@@ -1189,9 +1141,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
       drafts.forEach(m => tempIds.push(m.id));
       return [...prev, ...drafts];
     });
-    if (listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight;
-    }
+    // 스마트 스크롤로 처리되므로 강제 스크롤 제거
 
     try {
       // 1) 업로드 (메시지 자동생성 비활성화: 서버 권한/필터 체인과 무관하게 동작 보장)
@@ -1723,7 +1673,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
           const canDelete = isMine; // 본문/첨부 모두 삭제 허용
           const isEditing = editingMessageId === m.id;
           return (
-            <>
+            <React.Fragment key={`msg-${m.id}-${idx}`}>
               {showDate && (
                 <HStack key={`sep-${curKey}-${idx}`} justify="center" my={2} w="100%">
                   <Box px={3} py={1} bg="gray.100" color="gray.600" borderRadius="full" fontSize="xs">
@@ -1839,7 +1789,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                 </HStack>
               </Flex>
             </Box>
-            </>
+            </React.Fragment>
           );
         })}
         
@@ -1852,7 +1802,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
             transform="translateX(-50%)"
             bg="gray.300"
             color="white"
-            px={4}
+            px={10}
             py={2}
             borderRadius="full"
             boxShadow="lg"
