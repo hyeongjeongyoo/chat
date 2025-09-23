@@ -113,13 +113,77 @@ export function MessagesPanel({
     (async () => {
       try {
         const data = await chatApi.businessHoursStatus();
-        setBizOpen(!!data.open);
-        setBizMsg(String(data.message || ""));
+        // 테스트를 위해 임시로 false로 설정
+        setBizOpen(false); // !!data.open
+        setBizMsg(String(data.message || "현재 운영시간(평일 09:00~18:00)이 아닙니다. \n접수되었으며 운영시간에 답변드리겠습니다."));
       } catch {
-        setBizOpen(null);
+        setBizOpen(false); // 에러 시에도 false로 설정하여 테스트
+        setBizMsg("현재 운영시간(평일 09:00~18:00)이 아닙니다. \n접수되었으며 운영시간에 답변드리겠습니다.");
       }
     })();
   }, []);
+
+  // 자동 응답한 메시지 추적
+  const autoRepliedMessagesRef = React.useRef<Set<number>>(new Set());
+
+  // 새 메시지 수신 시 자동 응답 처리
+  React.useEffect(() => {
+    if (!messages.length || !backendThreadId) return;
+    
+    const latestMessage = messages[messages.length - 1];
+    if (!latestMessage || !latestMessage.id || latestMessage.localDraft) return;
+    
+    // 운영시간 외이고 상대방(USER가 아닌)이 보낸 메시지인 경우 자동 응답
+    if (bizOpen === false && bizMsg && 
+        latestMessage.sender !== "ADMIN" && 
+        !autoRepliedMessagesRef.current.has(latestMessage.id)) {
+      
+      autoRepliedMessagesRef.current.add(latestMessage.id);
+      
+      // 1초 후 자동 응답
+      setTimeout(async () => {
+        try {
+          const autoReplyContent = bizMsg || "현재 운영시간(평일 09:00~18:00)이 아닙니다.\n접수되었으며 운영시간에 답변드리겠습니다.";
+          
+          // 낙관적 메시지 추가
+          const optimisticMsg = {
+            id: Math.floor(Math.random() * 1_000_000),
+            threadId: backendThreadId,
+            sender: "ADMIN" as const,
+            content: autoReplyContent,
+            createdAt: new Date().toISOString(),
+            localDraft: true,
+          };
+          
+          setMessages(prev => [...prev, optimisticMsg]);
+          
+          // STOMP 전송 시도
+          let sentByStomp = false;
+          try {
+            sentByStomp = !!stompRef.current?.sendText(backendThreadId, "ADMIN", autoReplyContent, "admin");
+          } catch {}
+          
+          // STOMP 실패 시 REST 폴백
+          if (!sentByStomp) {
+            const saved = await chatApi.sendMessage(backendThreadId, {
+              senderType: "ADMIN",
+              content: autoReplyContent,
+              actor: "admin",
+            });
+            if (saved) {
+              setMessages(prev => prev.map(m => 
+                m.id === optimisticMsg.id ? 
+                { ...optimisticMsg, id: saved.id, createdAt: saved.createdAt, localDraft: false } : 
+                m
+              ));
+            }
+          }
+        } catch (error) {
+          console.error("자동 응답 전송 실패:", error);
+        }
+      }, 1000);
+    }
+  }, [messages, backendThreadId, bizOpen, bizMsg]);
 
   // 파일 선택 처리
   const openFilePicker = () => fileInputRef.current?.click();

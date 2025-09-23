@@ -134,6 +134,7 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
 
         const msg = payload as ChatMessageDto;
         const tid = msg.threadId;
+        
         queryClient.setQueryData(
           ["chat", "messages", tid],
           (old: any) => {
@@ -241,47 +242,8 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
     }
   }, [messages[messages.length - 1]?.id]);
 
-  const sendViaPreferredChannel = async (message: ChatMessageDto) => {
-    if (connected) {
-      // 낙관적 추가: 임시 음수 ID로 최신 페이지에 추가
-      try {
-        const tempId = -Math.floor(Math.random() * 1_000_000) - 1;
-        const tid = message.threadId as any;
-        const nowIso = new Date().toISOString();
-        const tempMsg: any = { ...message, id: tempId, createdAt: nowIso };
-        queryClient.setQueryData(["chat", "messages", tid], (old: any) => {
-          if (!old?.pages) {
-            // 초기 캐시가 없으면 스켈레톤 페이지를 만들어 낙관적 메시지 반영
-            return {
-              pages: [{ number: 0, content: [tempMsg] }],
-              pageParams: [0],
-            };
-          }
-          const maxPage = old.pages.reduce((acc: number, p: any) => (p.number > acc ? p.number : acc), old.pages[0]?.number ?? 0);
-          const newPages = old.pages.map((p: any) => {
-            if (p.number !== maxPage) return p;
-            const list: ChatMessageDto[] = p.content || [];
-            return { ...p, content: [...list, tempMsg] };
-          });
-          return { ...old, pages: newPages };
-        });
-      } catch {}
-      const ok = sendWebSocketMessage(message);
-      if (ok) return true;
-    }
-    try {
-      await sendMessage({
-        threadId: message.threadId,
-        content: message.content,
-        senderType: message.senderType,
-        uuid: uuid || undefined, // UUID 정보 포함
-      });
-      return true;
-    } catch (e) {
-      console.error("메시지 전송 실패", e);
-      return false;
-    }
-  };
+  // sendViaPreferredChannel 함수를 먼저 정의 (useCallback으로 메모이제이션)
+  const sendViaPreferredChannelRef = React.useRef<any>(null);
 
   const handleSendMessage = async () => {
     if (!messageInput.trim() || !selectedThreadId) return;
@@ -292,7 +254,7 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
       senderName: "상담원",
       messageType: "TEXT",
     };
-    await sendViaPreferredChannel(message);
+    await sendViaPreferredChannelRef.current?.(message);
     setMessageInput("");
     
     // 사용자가 메시지를 보낼 때는 항상 하단으로 스크롤
@@ -375,6 +337,52 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
     }
   }, [pageCount, hasNextPage]);
 
+  const sendViaPreferredChannel = React.useCallback(async (message: ChatMessageDto) => {
+    if (connected) {
+      // 낙관적 추가: 임시 음수 ID로 최신 페이지에 추가
+      try {
+        const tempId = -Math.floor(Math.random() * 1_000_000) - 1;
+        const tid = message.threadId as any;
+        const nowIso = new Date().toISOString();
+        const tempMsg: any = { ...message, id: tempId, createdAt: nowIso };
+        queryClient.setQueryData(["chat", "messages", tid], (old: any) => {
+          if (!old?.pages) {
+            // 초기 캐시가 없으면 스켈레톤 페이지를 만들어 낙관적 메시지 반영
+            return {
+              pages: [{ number: 0, content: [tempMsg] }],
+              pageParams: [0],
+            };
+          }
+          const maxPage = old.pages.reduce((acc: number, p: any) => (p.number > acc ? p.number : acc), old.pages[0]?.number ?? 0);
+          const newPages = old.pages.map((p: any) => {
+            if (p.number !== maxPage) return p;
+            const list: ChatMessageDto[] = p.content || [];
+            return { ...p, content: [...list, tempMsg] };
+          });
+          return { ...old, pages: newPages };
+        });
+      } catch {}
+      const ok = sendWebSocketMessage(message);
+      if (ok) return true;
+    }
+    try {
+      await sendMessage({
+        threadId: message.threadId,
+        content: message.content,
+        senderType: message.senderType,
+        uuid: uuid || undefined, // UUID 정보 포함
+      });
+      return true;
+    } catch (e) {
+      console.error("메시지 전송 실패", e);
+      return false;
+    }
+  }, [connected, sendWebSocketMessage, sendMessage, queryClient, uuid]);
+
+  // ref에 함수 할당
+  React.useEffect(() => {
+    sendViaPreferredChannelRef.current = sendViaPreferredChannel;
+  }, [sendViaPreferredChannel]);
 
   const startEdit = (message: ChatMessageDto) => {
     // 서버에 아직 저장되지 않은 임시 메시지(음수/무효 ID)는 수정 불가
@@ -507,11 +515,6 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
       )}
 
       <Flex ref={listRef} onScroll={handleScroll} direction="column" flex="1" minH={0} p={compact ? 2 : 4} overflowY="auto" gap={compact ? 1 : 4} position="relative">
-        {bizOpen === false && (
-          <Box bg="yellow.50" borderWidth="1px" borderColor="yellow.200" color="yellow.900" p={2} rounded="md">
-            {bizMsg || "현재 운영시간이 아닙니다. 접수되며, 운영시간에 답변드립니다."}
-          </Box>
-        )}
         {hasNextPage && (
           <Flex justify="center">
             <Button size="xs" variant="outline" onClick={() => {
@@ -646,7 +649,7 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
                       _placeholder={{ color: isUser ? "whiteAlpha.700" : "gray.400" }}
                     />
                   ) : (
-                    <Text>{contentStr}</Text>
+                    <Text whiteSpace="pre-wrap">{contentStr}</Text>
                   )}
                   <Flex mt={2} align="center" justify={isUser ? "flex-end" : "flex-start"} gap={2}>
                     <Text

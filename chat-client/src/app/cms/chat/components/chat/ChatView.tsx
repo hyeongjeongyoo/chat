@@ -190,13 +190,6 @@ export function ChatView({
           }
         }}
       >
-        {bizOpen === false && (
-          <Box px={2}>
-            <Box bg="yellow.50" borderWidth="1px" borderColor="yellow.200" color="yellow.900" p={2} rounded="md">
-              {bizMsg || "현재 운영시간이 아닙니다. 접수되며, 운영시간에 답변드립니다."}
-            </Box>
-          </Box>
-        )}
         
         {messages.map((m, idx) => {
           const prev = idx > 0 ? messages[idx - 1] : undefined;
