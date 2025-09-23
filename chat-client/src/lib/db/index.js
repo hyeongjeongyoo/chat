@@ -42,14 +42,14 @@ var schema_1 = require("./schema");
 var seed_1 = require("./seed");
 // MySQL 연결 설정
 var dbPool = mysql.createPool({
-    host: process.env.DB_HOST || "172.30.1.11",
-    user: process.env.DB_USER || "handy",
-    password: process.env.DB_PASSWORD || "gosel@1224",
-    database: process.env.DB_NAME || "cms_new",
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    port: 3306,
+    port: parseInt(process.env.DB_PORT) || 3306,
     timezone: "+09:00",
     charset: "utf8mb4",
 });

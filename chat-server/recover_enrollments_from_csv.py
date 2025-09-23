@@ -2,18 +2,24 @@ import mysql.connector
 import csv
 import re
 import random
+import os
 from datetime import datetime
 
-# --- Configuration: Please update these values ---
+# --- Configuration: Use environment variables for security ---
 DB_CONFIG = {
-    'host': '172.30.1.11',         # Your database host
-    'user': 'handy',   # Your database username
-    'password': 'gosel@1224', # Your database password
-    'database': 'arpina_new',     # Your database name
-    'port': 3306
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD'),  # No default - must be provided
+    'database': os.getenv('DB_NAME', 'cs_manager'),
+    'port': int(os.getenv('DB_PORT', '3306'))
 }
-CSV_FILE_PATH = 'transList_2025.06.23 15_49_31 - Sheet1.csv' # Path to your CSV file
-LOCKER_FEE = 5000  # Default locker fee as confirmed
+
+# Validate required environment variables
+if not DB_CONFIG['password']:
+    raise ValueError("DB_PASSWORD environment variable is required")
+
+CSV_FILE_PATH = os.getenv('CSV_FILE_PATH', 'transList_2025.06.23 15_49_31 - Sheet1.csv')
+LOCKER_FEE = int(os.getenv('LOCKER_FEE', '5000'))
 # -------------------------------------------------
 
 def parse_lesson_id_from_order(order_no):
