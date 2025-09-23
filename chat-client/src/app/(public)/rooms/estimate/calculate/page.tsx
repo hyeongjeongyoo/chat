@@ -7,13 +7,14 @@ import {
   EstimateProvider,
   useEstimateContext,
 } from "@/contexts/EstimateContext";
-import { EstimateStepper } from "@/components/rooms/estimate/EstimateStepper";
+// import { EstimateStepper } from "@/components/rooms/estimate/EstimateStepper"; // 컴포넌트 누락으로 임시 주석처리
 
 const EstimateView = () => {
   return (
     <Flex align="flex-start">
       <Box flex="1" m={0}>
-        <EstimateStepper />
+        {/* <EstimateStepper /> 컴포넌트 누락으로 임시 주석처리 */}
+        <Box p={4}>견적 계산 페이지</Box>
       </Box>
     </Flex>
   );

@@ -12,7 +12,7 @@ import {
   HStack,
 } from "@chakra-ui/react";
 import { PageContainer } from "@/components/layout/PageContainer";
-import { HeroSection } from "@/components/sections/HeroSection";
+// import { HeroSection } from "@/components/sections/HeroSection"; // 컴포넌트 누락으로 임시 주석처리
 import { useHeroSectionData } from "@/lib/hooks/useHeroSectionData";
 import InfoBoxList02 from "@/components/contents/InfoBoxList02";
 import HeadingH4 from "@/components/contents/HeadingH4";
@@ -51,7 +51,7 @@ export default function PrivacyPolicyPage() {
 
   return (
     <Box>
-      <HeroSection slideContents={[heroData]} />
+      {/* <HeroSection slideContents={[heroData]} /> 컴포넌트 누락으로 임시 주석처리 */}
       <PageContainer>
         <Box>
           <HeadingH4>

@@ -2,7 +2,7 @@
 
 import { Box, Text, Button, Icon } from "@chakra-ui/react";
 import { PageContainer } from "@/components/layout/PageContainer";
-import { HeroSection } from "@/components/sections/HeroSection";
+// import { HeroSection } from "@/components/sections/HeroSection"; // 컴포넌트 누락으로 임시 주석처리
 import { useHeroSectionData } from "@/lib/hooks/useHeroSectionData";
 import HeadingH4 from "@/components/contents/HeadingH4";
 import { FiDownload } from "react-icons/fi";
@@ -18,7 +18,7 @@ export default function OperationGuidelinesPage() {
 
   return (
     <Box>
-      <HeroSection slideContents={[heroData]} />
+      {/* <HeroSection slideContents={[heroData]} /> 컴포넌트 누락으로 임시 주석처리 */}
       <PageContainer>
         <Box>
           <HeadingH4>

@@ -47,7 +47,7 @@ import Layout from "@/components/layout/view/Layout";
 import { menuKeys, menuApi, sortMenus } from "@/lib/api/menu";
 import { useQuery } from "@tanstack/react-query";
 import { useHeroSectionData } from "@/lib/hooks/useHeroSectionData";
-import { HeroSection } from "@/components/sections/HeroSection";
+// import { HeroSection } from "@/components/sections/HeroSection"; // 컴포넌트 누락으로 임시 주석처리
 import { articleApi, type ArticleListResponse } from "@/lib/api/article";
 import React from "react";
 import { ArticleDetailDrawer } from "./ArticleDetailDrawer";
@@ -871,7 +871,7 @@ const BoardPreview = React.memo(function BoardPreview({
 
   return (
     <Layout currentPage="홈" isPreview={true} menus={menus}>
-      <HeroSection slideContents={[heroData]} />
+      {/* <HeroSection slideContents={[heroData]} /> 컴포넌트 누락으로 임시 주석처리 */}
       <Box px={8} py={8} minH="800px">
         {categories.length > 0 && (
           <Tabs.Root defaultValue="all" onValueChange={handleTabChange} mb={8}>

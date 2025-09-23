@@ -33,7 +33,7 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { CheckCircle2Icon, XCircleIcon } from "lucide-react";
 import { LessonDTO } from "@/types/swimming";
-import { LessonCard } from "@/components/swimming/LessonCard";
+// import { LessonCard } from "@/components/swimming/LessonCard"; // 컴포넌트 누락으로 임시 주석처리
 import { swimmingPaymentService } from "@/lib/api/swimming"; // For renewal
 import { Dialog } from "@chakra-ui/react";
 import KISPGPaymentFrame, {
@@ -1058,15 +1058,12 @@ export default function MyPage() {
                 };
 
                 return (
-                  <LessonCard
-                    key={enroll.enrollId ?? `renewal-${enroll.lesson.lessonId}`}
-                    lesson={lessonDataForCard}
-                    context="mypage" // Set context to "mypage"
-                    enrollment={enroll} // Pass the full enrollment object
-                    onGoToPayment={handleGoToPayment}
-                    onRequestCancel={handleRequestCancel}
-                    onRenewLesson={handleRenewLesson}
-                  />
+                  <Box key={enroll.enrollId ?? `renewal-${enroll.lesson.lessonId}`} p={4} borderWidth="1px" borderRadius="md">
+                    <Text fontWeight="bold">{lessonDataForCard.title}</Text>
+                    <Text color="gray.600">{lessonDataForCard.instructor}</Text>
+                    <Text fontSize="sm">{lessonDataForCard.location}</Text>
+                    {/* LessonCard 컴포넌트 누락으로 임시 대체 */}
+                  </Box>
                 );
               })}
             </Grid>
