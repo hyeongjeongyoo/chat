@@ -58,10 +58,11 @@ export const chatApi = {
         );
     },
 
-    deleteChannel: async (channelId: number, force: boolean = false): Promise<{ success: boolean } | any> => {
+    deleteChannel: async (channelId: number, force: boolean = false, actor: string = "admin"): Promise<{ success: boolean } | any> => {
         return await privateApi.delete<any>(`/cms/chat/channels/${channelId}`, {
-            params: { force }
-        });
+            headers: {},
+            params: { force, actor }
+        } as any);
     },
 
     // 채널 설정 관리
@@ -95,14 +96,16 @@ export const chatApi = {
 
     deleteThread: async (threadId: number, actor?: string): Promise<void> => {
         return await privateApi.delete<void>(`/cms/chat/threads/${threadId}`, {
+            headers: {},
             params: { actor: actor ?? "admin" }
-        });
+        } as any);
     },
 
     markRead: async (threadId: number, actor?: string): Promise<void> => {
         return await privateApi.post<void>(`/cms/chat/threads/${threadId}/read`, undefined, {
+            headers: {},
             params: { actor: actor ?? "admin" }
-        });
+        } as any);
     },
 	sendMessage: async (
 		threadId: number,

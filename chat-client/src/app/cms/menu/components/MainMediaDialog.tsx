@@ -214,11 +214,8 @@ export const MainMediaDialog: React.FC<MainMediaDialogProps> = ({
             0 // temporary menuId, will be updated with actual media ID later
           );
 
-          if (
-            fileUploadResponse.success &&
-            fileUploadResponse.data.length > 0
-          ) {
-            fileId = fileUploadResponse.data[0].fileId;
+          if (fileUploadResponse.length > 0) {
+            fileId = fileUploadResponse[0].fileId;
           } else {
             throw new Error("파일 업로드에 실패했습니다.");
           }

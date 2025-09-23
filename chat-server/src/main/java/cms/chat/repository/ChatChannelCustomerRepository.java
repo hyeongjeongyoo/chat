@@ -19,3 +19,4 @@ public interface ChatChannelCustomerRepository extends JpaRepository<ChatChannel
     void deleteByChannelIdAndUserUuid(Long channelId, String userUuid);
 }
 
+

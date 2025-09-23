@@ -27,4 +27,6 @@ public class ChatMessageDto {
     private String createdAt;
     private List<cms.file.dto.FileDto> attachments;
     private Boolean edited;
+    private String userName;
+    private String userIdentifier;
 }

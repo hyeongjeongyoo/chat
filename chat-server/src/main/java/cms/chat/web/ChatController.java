@@ -73,15 +73,46 @@ public class ChatController {
             dto.setSenderType((String) getSenderType.invoke(message));
             dto.setContent((String) getContent.invoke(message));
             
-            // 채널 ID 추가 (알림 로직에서 사용)
+            // 채널 ID 및 사용자 정보 추가 (알림 로직에서 사용)
             try {
                 ChatThread thread = chatThreadRepository.findById(threadId).orElse(null);
                 if (thread != null) {
-                    dto.setChannelId(thread.getChannel().getId());
+                    Long channelId = thread.getChannel().getId();
+                    dto.setChannelId(channelId);
+                    
+                    // 사용자 정보 추가
+                    String userName = thread.getUserName();
+                    String userIdentifier = thread.getUserIdentifier();
+                    if (userName != null && !userName.isEmpty()) {
+                        // userName을 dto에 설정하는 방법 (reflection으로 직접 설정)
+                        try {
+                            java.lang.reflect.Field userNameField = dto.getClass().getDeclaredField("userName");
+                            userNameField.setAccessible(true);
+                            userNameField.set(dto, userName);
+                        } catch (Exception ignored) {
+                            // userName 필드가 없으면 무시
+                        }
+                    }
+                    if (userIdentifier != null && !userIdentifier.isEmpty()) {
+                        // userIdentifier를 dto에 설정하는 방법
+                        try {
+                            java.lang.reflect.Field userIdentifierField = dto.getClass().getDeclaredField("userIdentifier");
+                            userIdentifierField.setAccessible(true);
+                            userIdentifierField.set(dto, userIdentifier);
+                        } catch (Exception ignored) {
+                            // userIdentifier 필드가 없으면 무시
+                        }
+                    }
+                    
+                    System.out.println("🔔 [백엔드] toDto - 설정 완료: channelId=" + channelId + ", threadId=" + threadId + 
+                                     ", userName=" + userName + ", userIdentifier=" + userIdentifier);
+                } else {
+                    System.err.println("🔔 [백엔드] toDto - thread not found for threadId: " + threadId);
                 }
             } catch (Exception e) {
                 // 채널 ID 설정 실패 시 무시
-                System.err.println("Failed to set channelId: " + e.getMessage());
+                System.err.println("🔔 [백엔드] toDto - Failed to set channelId/userInfo: " + e.getMessage());
+                e.printStackTrace();
             }
             java.time.LocalDateTime created = (java.time.LocalDateTime) getCreatedAt.invoke(message);
             dto.setCreatedAt(created != null ? created.toString() : null);
@@ -146,14 +177,14 @@ public class ChatController {
         this.businessHoursService = businessHoursService;
     }
 
-    // 목록 조회: 채널 전체
+    // 목록 조회: 채널 전체 (삭제되지 않은 채널만)
     @GetMapping("/channels")
     public ResponseEntity<?> listChannels(@RequestParam(value = "ownerUserUuid", required = false) String ownerUserUuid) {
         java.util.List<ChatChannel> channels;
         if (ownerUserUuid != null && !ownerUserUuid.isEmpty()) {
-            channels = chatChannelRepository.findByOwnerUserUuid(ownerUserUuid);
+            channels = chatChannelRepository.findByOwnerUserUuidAndDeletedYn(ownerUserUuid, "N");
         } else {
-            channels = chatChannelRepository.findAll();
+            channels = chatChannelRepository.findByDeletedYnOrderByCreatedAtAsc("N");
         }
         
         // 각 채널별 미읽은 메시지 개수 계산
@@ -248,18 +279,33 @@ public class ChatController {
 
     @DeleteMapping("/channels/{channelId}")
     public ResponseEntity<?> deleteChannel(@PathVariable Long channelId,
-            @RequestParam(defaultValue = "false") boolean force) {
+            @RequestParam(defaultValue = "false") boolean force,
+            @RequestParam(defaultValue = "admin") String actor) {
         ChatChannel channel = chatChannelRepository.findById(channelId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found"));
 
-        // 채널에 연결된 스레드 확인
+        // 이미 삭제된 채널인지 확인
+        if (channel.isDeleted()) {
+            return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(true, "Channel already deleted"));
+        }
+
+        // 채널에 연결된 스레드 확인 (모든 스레드)
         java.util.List<ChatThread> threads = chatThreadRepository.findByChannelOrderByUpdatedAtDesc(channel);
 
         if (threads != null && !threads.isEmpty()) {
             if (force) {
-                // 강제 삭제: CASCADE DELETE로 관련 데이터가 자동 삭제되므로 채널만 삭제
-                chatChannelRepository.delete(channel);
-                return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(true, "Channel and associated data deleted"));
+                // 강제 삭제: 관련 스레드들도 모두 소프트 삭제
+                for (ChatThread thread : threads) {
+                    // 스레드도 소프트 삭제 (ChatThread에 소프트 삭제 필드가 있다면)
+                    // thread.markDeleted(actor);
+                    // chatThreadRepository.save(thread);
+                }
+                
+                // 채널 소프트 삭제
+                channel.markDeleted(actor);
+                chatChannelRepository.save(channel);
+                
+                return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(true, "Channel soft deleted with associated threads"));
             } else {
                 // 스레드 목록과 함께 409 응답
                 java.util.List<java.util.Map<String, Object>> threadList = new java.util.ArrayList<>();
@@ -283,9 +329,10 @@ public class ChatController {
             }
         }
 
-        // 스레드가 없으면 정상 삭제 (CASCADE DELETE로 관련 데이터 자동 삭제)
-        chatChannelRepository.delete(channel);
-        return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(true, "Channel deleted"));
+        // 스레드가 없으면 정상 소프트 삭제
+        channel.markDeleted(actor);
+        chatChannelRepository.save(channel);
+        return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(true, "Channel soft deleted"));
     }
 
     @PostMapping("/threads/{threadId}/messages/file")
@@ -418,9 +465,11 @@ public class ChatController {
     public ResponseEntity<Page<ChatMessageDto>> getMessages(@PathVariable Long threadId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+        System.out.println("🔍 [ChatController] getMessages called - threadId: " + threadId + ", page: " + page + ", size: " + size);
         ChatThread thread = chatThreadRepository.findById(threadId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Thread not found"));
         Page<?> messages = (Page<?>) (Page) chatService.getMessages(thread, page, size);
+        System.out.println("🔍 [ChatController] Raw messages page - number: " + messages.getNumber() + ", size: " + messages.getSize() + ", totalElements: " + messages.getTotalElements() + ", totalPages: " + messages.getTotalPages());
         Page<ChatMessageDto> dtoPage = messages.map(m -> {
             ChatMessageDto dto = toDto(m, threadId);
             try {
@@ -483,8 +532,22 @@ public class ChatController {
             }
             
             try {
+                // 스레드별 구독자에게 전송
+                System.out.println("🔔 [백엔드] 스레드 구독자에게 메시지 전송: /sub/chat/" + threadId);
                 messagingTemplate.convertAndSend("/sub/chat/" + threadId, dto);
-            } catch (Exception ignore) {
+                
+                // 채널별 구독자에게도 전송 (다른 스레드에 있는 사용자도 알림 받을 수 있도록)
+                ChatChannel channel = thread.getChannel();
+                if (channel != null) {
+                    String channelTopic = "/sub/chat/channel/" + channel.getId();
+                    System.out.println("🔔 [백엔드] 채널 구독자에게 메시지 전송: " + channelTopic);
+                    System.out.println("🔔 [백엔드] 전송할 메시지 내용 - ID: " + dto.getId() + ", threadId: " + dto.getThreadId() + ", channelId: " + dto.getChannelId() + ", content: " + dto.getContent());
+                    messagingTemplate.convertAndSend(channelTopic, dto);
+                } else {
+                    System.out.println("🔔 [백엔드] 채널이 null이어서 채널 구독자에게 전송하지 않음");
+                }
+            } catch (Exception e) {
+                System.err.println("🔔 [백엔드] WebSocket 메시지 전송 실패: " + e.getMessage());
             }
 
             // Closed hours auto-reply (single-shot throttling simplified with recent timestamp check in service layer could be added later)
@@ -518,7 +581,7 @@ public class ChatController {
     @GetMapping("/config/channels/{uuid}")
     public ResponseEntity<?> getChannelConfig(@PathVariable String uuid) {
         try {
-            java.util.List<ChatChannel> channels = chatChannelRepository.findByOwnerUserUuid(uuid);
+            java.util.List<ChatChannel> channels = chatChannelRepository.findByOwnerUserUuidAndDeletedYn(uuid, "N");
             if (channels.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found");
             }
@@ -582,7 +645,7 @@ public class ChatController {
     @GetMapping("/config/channels")
     public ResponseEntity<?> getAllChannelConfigs() {
         try {
-            java.util.List<ChatChannel> channels = chatChannelRepository.findAll();
+            java.util.List<ChatChannel> channels = chatChannelRepository.findByDeletedYnOrderByCreatedAtAsc("N");
             java.util.Map<String, Object> configs = new java.util.HashMap<>();
 
             for (ChatChannel channel : channels) {
@@ -607,7 +670,7 @@ public class ChatController {
     @DeleteMapping("/config/channels/{uuid}")
     public ResponseEntity<?> deleteChannelConfig(@PathVariable String uuid) {
         try {
-            java.util.List<ChatChannel> channels = chatChannelRepository.findByOwnerUserUuid(uuid);
+            java.util.List<ChatChannel> channels = chatChannelRepository.findByOwnerUserUuidAndDeletedYn(uuid, "N");
             if (channels.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Channel not found");
             }
@@ -625,9 +688,32 @@ public class ChatController {
 
     @GetMapping("/config/validate/{uuid}")
     public ResponseEntity<?> validateChannelUuid(@PathVariable String uuid) {
+        System.out.println("UUID 검증 시작 - UUID: " + uuid);
+        
         try {
-            java.util.List<ChatChannel> channels = chatChannelRepository.findByOwnerUserUuid(uuid);
-            ChatChannel channel = channels.isEmpty() ? null : channels.get(0);
+            // null 체크
+            if (uuid == null || uuid.trim().isEmpty()) {
+                System.out.println("UUID가 null이거나 빈 문자열입니다.");
+                java.util.Map<String, Object> response = new java.util.HashMap<>();
+                response.put("valid", false);
+                response.put("uuid", uuid);
+                return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(response, "ok"));
+            }
+            
+            // Repository null 체크
+            if (chatChannelRepository == null) {
+                System.err.println("ChatChannelRepository가 null입니다!");
+                throw new RuntimeException("Repository not initialized");
+            }
+            
+            System.out.println("Repository 조회 시작 - UUID: " + uuid);
+            
+            // 삭제되지 않은 채널만 조회
+            java.util.List<ChatChannel> channels = chatChannelRepository.findByOwnerUserUuidAndDeletedYn(uuid, "N");
+            
+            System.out.println("Repository 조회 완료 - 결과 개수: " + (channels != null ? channels.size() : "null"));
+            
+            ChatChannel channel = (channels != null && !channels.isEmpty()) ? channels.get(0) : null;
 
             java.util.Map<String, Object> response = new java.util.HashMap<>();
             response.put("valid", channel != null);
@@ -640,10 +726,34 @@ public class ChatController {
                 config.put("cmsName", channel.getCmsName());
                 config.put("ownerUserUuid", channel.getOwnerUserUuid());
                 response.put("config", config);
+                
+                System.out.println(String.format("UUID 검증 성공 - UUID: %s, 채널ID: %d, 업체: %s (%s)", 
+                    uuid, channel.getId(), channel.getCmsName(), channel.getCmsCode()));
+            } else {
+                System.out.println(String.format("UUID 검증 실패 - UUID: %s (삭제되지 않은 채널을 찾을 수 없음)", uuid));
+                
+                try {
+                    // 삭제된 채널이 있는지도 확인
+                    java.util.List<ChatChannel> deletedChannels = chatChannelRepository.findByOwnerUserUuid(uuid);
+                    if (deletedChannels != null && !deletedChannels.isEmpty()) {
+                        ChatChannel deletedChannel = deletedChannels.get(0);
+                        System.out.println(String.format("삭제된 채널 발견 - UUID: %s, 채널ID: %d, 삭제여부: %s", 
+                            uuid, deletedChannel.getId(), deletedChannel.getDeletedYn()));
+                    } else {
+                        System.out.println("UUID에 해당하는 채널이 전혀 없습니다: " + uuid);
+                    }
+                } catch (Exception deleteCheckEx) {
+                    System.err.println("삭제된 채널 확인 중 오류: " + deleteCheckEx.getMessage());
+                }
             }
 
             return ResponseEntity.ok(cms.common.dto.ApiResponseSchema.success(response, "ok"));
         } catch (Exception e) {
+            // 더 자세한 에러 로그
+            e.printStackTrace();
+            System.err.println(String.format("UUID 검증 중 오류 발생 - UUID: %s, 오류 타입: %s, 메시지: %s", 
+                uuid, e.getClass().getSimpleName(), e.getMessage()));
+            
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(cms.common.dto.ApiResponseSchema.error("Failed to validate UUID: " + e.getMessage(), "INTERNAL_SERVER_ERR"));
         }

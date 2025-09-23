@@ -45,13 +45,14 @@ public class ChatService {
 
     @Transactional
     public ChatChannel getOrCreateChannel(String cmsCode, String cmsName, String actor, String ownerUserUuid) {
-        return chatChannelRepository.findByCmsCodeIgnoreCase(cmsCode)
+        // 먼저 삭제되지 않은 채널을 찾음
+        return chatChannelRepository.findByCmsCodeIgnoreCaseAndDeletedYn(cmsCode, "N")
                 .orElseGet(() -> {
                     try {
                         return chatChannelRepository.save(ChatChannel.create(cmsCode, cmsName, actor, ownerUserUuid));
                     } catch (org.springframework.dao.DataIntegrityViolationException e) {
-                        // Unique constraint race condition safeguard
-                        return chatChannelRepository.findByCmsCodeIgnoreCase(cmsCode)
+                        // Unique constraint race condition safeguard - 삭제되지 않은 채널 조회
+                        return chatChannelRepository.findByCmsCodeIgnoreCaseAndDeletedYn(cmsCode, "N")
                                 .orElseThrow(() -> e);
                     }
                 });
@@ -100,8 +101,16 @@ public class ChatService {
                 dto.put("createdAt", savedWelcomeMessage.getCreatedAt());
                 dto.put("edited", false);
                 
+                // 스레드별 구독자에게 전송
                 messagingTemplate.convertAndSend("/sub/chat/" + thread.getId(), dto);
-                System.out.println("환영 메시지 WebSocket 전송 완료: /sub/chat/" + thread.getId());
+                
+                // 채널별 구독자에게도 전송
+                ChatChannel channel = thread.getChannel();
+                if (channel != null) {
+                    messagingTemplate.convertAndSend("/sub/chat/channel/" + channel.getId(), dto);
+                }
+                
+                System.out.println("환영 메시지 WebSocket 전송 완료: /sub/chat/" + thread.getId() + ", /sub/chat/channel/" + (channel != null ? channel.getId() : "null"));
             } catch (Exception wsException) {
                 // WebSocket 전송 실패는 무시
                 System.err.println("환영 메시지 WebSocket 전송 실패: " + wsException.getMessage());

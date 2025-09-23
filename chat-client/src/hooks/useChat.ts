@@ -1,6 +1,6 @@
 "use client";
 
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient, useQuery } from "@tanstack/react-query";
 import { chatApi, ChatMessageDto, SpringPage } from "@/lib/api/chat";
 
 interface UseChatMessagesResult {
@@ -9,7 +9,7 @@ interface UseChatMessagesResult {
   error: unknown;
   fetchNextPage: () => void;
   hasNextPage: boolean;
-  sendMessage: (params: { threadId: number; content: string; senderType?: "USER" | "ADMIN"; senderName?: string; messageType?: string; fileName?: string; fileUrl?: string; attachments?: any[] }) => Promise<ChatMessageDto>;
+  sendMessage: (params: { threadId: number; content: string; senderType?: "USER" | "ADMIN"; senderName?: string; messageType?: string; fileName?: string; fileUrl?: string; attachments?: any[]; uuid?: string }) => Promise<ChatMessageDto>;
   updateMessage: (params: { messageId: number; content: string }) => Promise<void>;
   deleteMessage: (params: { messageId: number }) => Promise<void>;
 }
@@ -26,23 +26,36 @@ export const useChatMessages = (threadId?: number): UseChatMessagesResult => {
   } = useInfiniteQuery<SpringPage<ChatMessageDto>>({
     queryKey: ["chat", "messages", threadId ?? 0],
     queryFn: async ({ pageParam = "LAST" }) => {
+      console.log("🔍 [useChat] queryFn called - threadId:", threadId, "pageParam:", pageParam);
       if (!threadId) return { content: [], first: true, last: true, number: 0, totalPages: 0 } as SpringPage<ChatMessageDto>;
       if (pageParam === "LAST") {
         // 총 페이지 파악 후 마지막 페이지 로드
+        console.log("🔍 [useChat] Loading LAST page for threadId:", threadId);
         const first = await chatApi.getMessages(threadId, 0, 30);
+        console.log("🔍 [useChat] First page response:", first);
         const totalPages = first.totalPages ?? 1;
         const lastIdx = Math.max(0, totalPages - 1);
+        console.log("🔍 [useChat] totalPages:", totalPages, "lastIdx:", lastIdx);
         if (lastIdx === 0) return first;
-        return await chatApi.getMessages(threadId, lastIdx, 30);
+        const lastPage = await chatApi.getMessages(threadId, lastIdx, 30);
+        console.log("🔍 [useChat] Last page response:", lastPage);
+        return lastPage;
       }
-      return await chatApi.getMessages(threadId, pageParam as number, 30);
+      console.log("🔍 [useChat] Loading page:", pageParam, "for threadId:", threadId);
+      const result = await chatApi.getMessages(threadId, pageParam as number, 30);
+      console.log("🔍 [useChat] Page result:", result);
+      return result;
     },
     initialPageParam: "LAST" as any,
     // 위로 스크롤 시 더 과거 페이지(번호 - 1)를 불러옴
-    getNextPageParam: (lastPage) => (lastPage.number > 0 ? lastPage.number - 1 : undefined),
+    getNextPageParam: (lastPage) => {
+      const nextParam = lastPage.number > 0 ? lastPage.number - 1 : undefined;
+      console.log("🔍 [useChat] getNextPageParam - lastPage.number:", lastPage.number, "nextParam:", nextParam);
+      return nextParam;
+    },
   });
 
-  const sendMessage = async (params: { threadId: number; content: string; senderType?: "USER" | "ADMIN"; senderName?: string; messageType?: string; fileName?: string; fileUrl?: string; attachments?: any[] }): Promise<ChatMessageDto> => {
+  const sendMessage = async (params: { threadId: number; content: string; senderType?: "USER" | "ADMIN"; senderName?: string; messageType?: string; fileName?: string; fileUrl?: string; attachments?: any[]; uuid?: string }): Promise<ChatMessageDto> => {
     // HTTP 전송 경로 사용
     const saved = await chatApi.sendMessage(params.threadId, {
       senderType: (params.senderType as any) ?? "ADMIN",
@@ -95,6 +108,44 @@ export const useChatMessages = (threadId?: number): UseChatMessagesResult => {
     updateMessage,
     deleteMessage,
   };
+};
+
+// 채널 목록을 가져오는 hook
+export const useChatChannels = () => {
+  return useQuery({
+    queryKey: ["chat", "channels"],
+    queryFn: async () => {
+      try {
+        const channels = await chatApi.getChannels();
+        return channels || [];
+      } catch (error) {
+        console.error("Failed to fetch channels:", error);
+        return [];
+      }
+    },
+    staleTime: 30000, // 30초간 캐시
+    refetchInterval: 60000, // 1분마다 자동 새로고침
+  });
+};
+
+// 특정 채널의 스레드 목록을 가져오는 hook
+export const useChatThreads = (channelId?: number) => {
+  return useQuery({
+    queryKey: ["chat", "threads", channelId],
+    queryFn: async () => {
+      if (!channelId) return [];
+      try {
+        const threads = await chatApi.getThreadsByChannel(channelId);
+        return threads || [];
+      } catch (error) {
+        console.error("Failed to fetch threads:", error);
+        return [];
+      }
+    },
+    enabled: !!channelId, // channelId가 있을 때만 실행
+    staleTime: 30000, // 30초간 캐시
+    refetchInterval: 60000, // 1분마다 자동 새로고침
+  });
 };
 
 export default useChatMessages;

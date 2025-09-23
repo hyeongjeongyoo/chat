@@ -57,6 +57,16 @@ public class ChatChannel {
     @Column(name = "updated_ip", length = 50)
     private String updatedIp;
 
+    // Soft delete fields
+    @Column(name = "deleted_yn", length = 1, nullable = false)
+    private String deletedYn = "N";
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @Column(name = "deleted_by", length = 64)
+    private String deletedBy;
+
     public static ChatChannel create(String cmsCode, String cmsName, String actor) {
         return create(cmsCode, cmsName, actor, null);
     }
@@ -88,6 +98,9 @@ public class ChatChannel {
         if (this.updatedIp == null || this.updatedIp.isEmpty()) {
             this.updatedIp = this.createdIp;
         }
+        if (this.deletedYn == null || this.deletedYn.isEmpty()) {
+            this.deletedYn = "N";
+        }
     }
 
     @PreUpdate
@@ -95,6 +108,20 @@ public class ChatChannel {
         if (this.updatedIp == null || this.updatedIp.isEmpty()) {
             this.updatedIp = "127.0.0.1";
         }
+    }
+
+    // Soft delete method
+    public void markDeleted(String actor) {
+        this.deletedYn = "Y";
+        this.deletedAt = LocalDateTime.now();
+        this.deletedBy = actor;
+        this.updatedBy = actor;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    // Check if deleted
+    public boolean isDeleted() {
+        return "Y".equals(this.deletedYn);
     }
 }
 

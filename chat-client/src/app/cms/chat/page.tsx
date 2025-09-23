@@ -468,6 +468,8 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
   
   const autoScrollRef = React.useRef<boolean>(true);
   const didInitScrollRef = React.useRef<boolean>(false);
+  const [showNewMessageAlert, setShowNewMessageAlert] = React.useState(false);
+  const [unreadCount, setUnreadCount] = React.useState(0);
   // 로딩 전 하단으로부터의 오프셋(뷰포트 하단 기준)
   const pendingRestoreRef = React.useRef<number | null>(null);
   const isLoadingPrevRef = React.useRef<boolean>(false);
@@ -481,6 +483,49 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
   const lastSentRef = React.useRef<{ content: string; at: number } | null>(null);
   // 최근 수신 이벤트 키(중복 방지: 일시적 이중 브로드캐스트/이중 구독 대응)
   const recentEventKeysRef = React.useRef<Map<string, number>>(new Map());
+
+  // 스레드 변경 시 새 메시지 알림 초기화
+  React.useEffect(() => {
+    setShowNewMessageAlert(false);
+    setUnreadCount(0);
+  }, [selectedThreadId]);
+
+  // 스마트 스크롤 함수들
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    const el = listRef.current;
+    if (!el) return;
+    isProgrammaticScrollRef.current = true;
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior
+    });
+    setTimeout(() => { 
+      isProgrammaticScrollRef.current = false; 
+      setShowNewMessageAlert(false);
+      setUnreadCount(0);
+    }, 100);
+  };
+
+  // 사용자가 하단 근처에 있는지 확인
+  const isNearBottom = () => {
+    const el = listRef.current;
+    if (!el) return true;
+    const threshold = 100; // 하단 100px 이내
+    return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+  };
+
+  // 스크롤 이벤트 핸들러
+  const handleScroll = () => {
+    if (isProgrammaticScrollRef.current) return;
+    
+    const nearBottom = isNearBottom();
+    autoScrollRef.current = nearBottom;
+    
+    if (nearBottom && showNewMessageAlert) {
+      setShowNewMessageAlert(false);
+      setUnreadCount(0);
+    }
+  };
 
   // 서버 실제 ID 매핑 캐시 (mockThreadId -> backendThreadId)
   const backendThreadIdMapRef = React.useRef<Record<number, number>>({});
@@ -685,25 +730,8 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                     }); 
                   } catch {}
                 }
-                // 3. 같은 채널 다른 상대와 대화 중이라면 채널에 뱃지, 누가 보냈는지 토스트 띄워줘
-                else if (isCurrentPage && isCurrentChannel && !isCurrentThread) {
-                  // 채널 뱃지 업데이트 (즉시)
-                  if (channelsPanelRef.current) {
-                    channelsPanelRef.current.refreshChannels();
-                  }
-                  // 스레드 뱃지 업데이트 (즉시)
-                  onThreadsRefresh();
-                  // 전역 뱃지 업데이트
-                  incrementTotalUnreadCount();
-                  // 토스트 표시
-                  try { 
-                    toaster.create({ 
-                      title: `${currentChannelName} - ${messageUserName}님의 새 메시지`, 
-                      type: "info"
-                    }); 
-                  } catch {}
-                }
-                // 4. 다른 채널에서 메시지가 온 경우
+                // 3. 같은 채널 다른 상대와 대화 중이라면 - 채널별 구독에서 처리하므로 여기서는 제거
+                // 3. 다른 채널에서 메시지가 온 경우
                 else if (isCurrentPage && !isCurrentChannel) {
                   // 채널 뱃지 업데이트 (즉시)
                   if (channelsPanelRef.current) {
@@ -720,7 +748,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
                     }); 
                   } catch {}
                 }
-                // 5. 다른 메뉴에 가 있다면 (/cms/channel) 에 가 있을 경우 메뉴, 채널에 뱃지, 대화상대에 뱃지와 어떤 채널의 누가 보냈는지 토스트 띄워줘
+                // 4. 다른 메뉴에 가 있다면 (/cms/channel) 에 가 있을 경우 메뉴, 채널에 뱃지, 대화상대에 뱃지와 어떤 채널의 누가 보냈는지 토스트 띄워줘
                 else if (!isCurrentPage) {
                   // 채널 뱃지 업데이트 (즉시)
                   if (channelsPanelRef.current) {
@@ -741,6 +769,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
             }
           });
           stompRef.current = c;
+          
           // 연결 직후 한 번 즉시 동기화해서, 구독 이전에 도착한 환영 메시지도 바로 반영
           try { refetch(); } catch {}
         } catch {}
@@ -748,6 +777,119 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
     })();
     return () => { mounted = false; };
   }, [ensureBackendIds]);
+
+  // 채널 구독 전용 useEffect (WebSocket 연결 후 실행)
+  React.useEffect(() => {
+    if (!selectedChannelId || !stompRef.current) {
+      console.log("🔔 [채널구독] 조건 불만족:", { selectedChannelId, hasStompRef: !!stompRef.current });
+      return;
+    }
+
+    // 연결 상태 확인을 위한 주기적 체크
+    const checkAndSubscribe = () => {
+      console.log("🔔 [채널구독] 연결 상태 체크:", {
+        selectedChannelId,
+        hasStompRef: !!stompRef.current,
+        connected: stompRef.current?.client?.connected
+      });
+
+      if (stompRef.current?.client?.connected) {
+        console.log("🔔 [채널구독] WebSocket 연결됨, 채널 구독 시작:", selectedChannelId);
+        
+        // 기존 구독 해제
+        stompRef.current.unsubscribeFromChannel();
+        
+        // 새 채널 구독
+        stompRef.current.subscribeToChannel(selectedChannelId, (channelEvt) => {
+          console.log("🔔 [채널구독] 채널 메시지 수신:", channelEvt);
+          
+          const channelMsg = channelEvt && typeof channelEvt === "object" ? channelEvt : undefined;
+          if (channelMsg) {
+            const messageSender = (channelMsg as any).senderType;
+            const messageThreadId = (channelMsg as any).threadId;
+            const messageUserName = (channelMsg as any).userName || (channelMsg as any).userIdentifier || "알 수 없는 사용자";
+            // channelId가 undefined면 현재 선택된 채널 ID 사용 (임시 해결책)
+            const messageChannelId = (channelMsg as any).channelId || selectedChannelId;
+            
+            // ADMIN 메시지는 알림 없음
+            if (messageSender === "ADMIN") {
+              console.log("🔔 [채널구독] ADMIN 메시지라서 알림 없음");
+              return;
+            }
+            
+            // 현재 스레드와 다른 스레드에서 온 메시지만 알림 처리
+            const currentThreadId = selectedThreadId;
+            const isCurrentThread = messageThreadId === currentThreadId;
+            
+            console.log("🔔 [채널구독] 스레드 확인:", { messageThreadId, currentThreadId, isCurrentThread });
+            
+            if (!isCurrentThread) {
+              const isCurrentPage = window.location.pathname === "/cms/chat";
+              const isCurrentChannel = messageChannelId === selectedChannelId;
+              
+              console.log("🔔 [채널구독] 조건 확인:", {
+                isCurrentPage,
+                isCurrentChannel,
+                isCurrentThread,
+                currentChannelName,
+                messageUserName,
+                messageChannelId,
+                selectedChannelId
+              });
+              
+              if (isCurrentPage && isCurrentChannel && !isCurrentThread) {
+                console.log("🔔 [채널구독] 3번 케이스 알림 실행!");
+                
+                // 뱃지 업데이트
+                if (channelsPanelRef.current) {
+                  channelsPanelRef.current.refreshChannels();
+                }
+                onThreadsRefresh();
+                incrementTotalUnreadCount();
+                
+                // 토스트 표시
+                try { 
+                  // 현재 선택된 채널명 가져오기
+                  const currentChannelNameValue = channelMsg?.cmsName || "알 수 없는 채널";
+                  const toastMessage = `${currentChannelNameValue} - ${messageUserName}님의 새 메시지`;
+                  console.log("🔔 [채널구독] 토스트 생성 시도:", toastMessage);
+                  
+                  toaster.create({ 
+                    title: toastMessage, 
+                    type: "info"
+                  }); 
+                  console.log("🔔 [채널구독] 토스트 생성 성공!");
+                } catch (toastError) {
+                  console.error("🔔 [채널구독] 토스트 생성 실패:", toastError);
+                }
+              } else {
+                console.log("🔔 [채널구독] 3번 케이스 조건 불만족 - 알림 없음");
+              }
+            } else {
+              console.log("🔔 [채널구독] 현재 스레드 메시지라서 알림 없음");
+            }
+          }
+        });
+        
+        return true; // 구독 성공
+      } else {
+        console.log("🔔 [채널구독] WebSocket 아직 연결 안됨");
+        return false; // 구독 실패
+      }
+    };
+
+    // 즉시 시도
+    if (!checkAndSubscribe()) {
+      // 연결이 안됐으면 1초 후 재시도
+      const retryTimeout = setTimeout(() => {
+        checkAndSubscribe();
+      }, 1000);
+      
+      return () => {
+        clearTimeout(retryTimeout);
+      };
+    }
+  }, [selectedChannelId]);
 
   // Files 탭 활성화 시 현재 스레드의 첨부 목록 로딩
   React.useEffect(() => {
@@ -930,6 +1072,22 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
     }
   }, [messages.length, optimistic.length]);
 
+  // 새 메시지 도착 시 처리 (chat-popup과 동일한 로직)
+  React.useEffect(() => {
+    const allMessages = [...messages, ...optimistic];
+    const latestMessage = allMessages[allMessages.length - 1];
+    if (!latestMessage) return;
+
+    if (autoScrollRef.current) {
+      // 하단 근처에 있으면 부드럽게 스크롤
+      scrollToBottom("smooth");
+    } else {
+      // 위쪽에 있으면 새 메시지 알림 표시
+      setShowNewMessageAlert(true);
+      setUnreadCount(prev => prev + 1);
+    }
+  }, [messages[messages.length - 1]?.id, optimistic[optimistic.length - 1]?.id]);
+
   // 파일 탭에서 채팅 탭으로 전환 시, 최신 메시지로 스크롤 고정
   React.useEffect(() => {
     if (activeTab !== "chat") return;
@@ -956,14 +1114,13 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
   React.useLayoutEffect(() => {
     if (!listRef.current) return;
     const el = listRef.current;
-    // 초기 1회만 강제 하단 이동
+    // 초기 로딩 시 마지막 페이지 하단으로 스냅 (chat-popup과 동일한 로직)
     if (!didInitScrollRef.current) {
-      requestAnimationFrame(() => {
-        isProgrammaticScrollRef.current = true;
-        el.scrollTop = el.scrollHeight;
+      // 메시지가 하나라도 있으면 하단으로 이동
+      if (messages.length > 0) {
+        scrollToBottom("auto");
         didInitScrollRef.current = true;
-        requestAnimationFrame(() => { isProgrammaticScrollRef.current = false; });
-      });
+      }
       return;
     }
     // 이전 페이지 로딩 직후 위치 복원
@@ -1131,10 +1288,10 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
         localDraft: true,
       };
       setMessages(prev => [...prev, optimisticMsg]);
-      if (listRef.current) {
-        listRef.current.scrollTop = listRef.current.scrollHeight;
-      }
       setInput("");
+      
+      // 사용자가 메시지를 보낼 때는 항상 하단으로 스크롤
+      setTimeout(() => scrollToBottom("smooth"), 50);
       setAttached([]);
       // 1) STOMP로 전송(서버가 저장 및 브로드캐스트)
       let sentByStomp = false;
@@ -1517,7 +1674,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
           )}
         </Box>
       ) : (
-      <VStack align="stretch" gap={3} flex={1} overflowY="auto" py={2}
+      <VStack align="stretch" gap={3} flex={1} overflowY="auto" py={2} position="relative"
         ref={listRef}
         onWheel={() => { userScrolledRef.current = true; }}
         onTouchMove={() => { userScrolledRef.current = true; }}
@@ -1529,6 +1686,12 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
           const nearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) <= 80;
           // 하단 근처 여부로 자동 스크롤 모드 전환
           autoScrollRef.current = nearBottom;
+          
+          // 새 메시지 알림 관리
+          if (!isProgrammaticScrollRef.current && nearBottom && showNewMessageAlert) {
+            setShowNewMessageAlert(false);
+            setUnreadCount(0);
+          }
           // 위로 무한스크롤: 현재 바닥으로부터의 오프셋을 저장해 위치 복원
           if (isProgrammaticScrollRef.current) {
             return;
@@ -1536,6 +1699,7 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
           // 초기 강제 하단 스크롤이 안 끝났다면 무한 스크롤 트리거 제한
           if (!didInitScrollRef.current) return;
           if (nearTop && hasNextPage && !isFetchingNextPage && userScrolledRef.current) {
+            console.log("🔍 [MessagesPanel] Triggering fetchNextPage - nearTop:", nearTop, "hasNextPage:", hasNextPage, "isFetchingNextPage:", isFetchingNextPage);
             pendingRestoreRef.current = el.scrollHeight - el.scrollTop - el.clientHeight; // bottom offset
             isLoadingPrevRef.current = true;
             fetchNextPage();
@@ -1678,6 +1842,50 @@ function MessagesPanel({ colors, selectedThreadId, selectedChannelId, currentCha
             </>
           );
         })}
+        
+        {/* 새 메시지 알림 */}
+        {showNewMessageAlert && (
+          <Box
+            position="fixed"
+            bottom="100px"
+            left="50%"
+            transform="translateX(-50%)"
+            bg="gray.300"
+            color="white"
+            px={4}
+            py={2}
+            borderRadius="full"
+            boxShadow="lg"
+            cursor="pointer"
+            onClick={() => scrollToBottom("smooth")}
+            zIndex="10"
+            display="flex"
+            alignItems="center"
+            gap={2}
+            fontSize="sm"
+            fontWeight="medium"
+            transition="all 0.2s"
+            _hover={{ bg: "gray.400", transform: "translateX(-50%) scale(1.05)" }}
+          >
+            {unreadCount > 0 && (
+              <Box
+                bg="red.500"
+                color="white"
+                borderRadius="full"
+                minW="20px"
+                h="20px"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                fontSize="xs"
+                fontWeight="bold"
+              >
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </Box>
+            )}
+            새 메시지 ↓
+          </Box>
+        )}
       </VStack>
       )}
       {confirmDeleteId !== null && (

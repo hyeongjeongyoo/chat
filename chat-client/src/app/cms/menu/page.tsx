@@ -3,6 +3,7 @@
 import { Badge, Box, Flex, Heading } from "@chakra-ui/react";
 import type { Swiper as SwiperType } from "swiper";
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { MenuList } from "./components/MenuList";
 import { MenuEditor } from "./components/MenuEditor";
 import { GridSection } from "@/components/ui/grid-section";
@@ -20,10 +21,16 @@ import { sortMenus } from "@/lib/api/menu";
 import { Menu } from "@/types/api";
 
 import { MainMediaDialog } from "./components/MainMediaDialog";
-import { useRouter } from "next/navigation";
 import MainSection from "@/components/main/MainSection";
 
 export default function MenuManagementPage() {
+  const router = useRouter();
+  
+  // 메뉴 페이지 접근 시 채팅 페이지로 리다이렉트
+  useEffect(() => {
+    router.replace("/cms/chat");
+  }, [router]);
+
   const renderCount = React.useRef(0);
   renderCount.current += 1;
 

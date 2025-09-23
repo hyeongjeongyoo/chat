@@ -49,7 +49,7 @@ export default function ChatPopupPage() {
     
     const tid = storedThreadId ? Number(storedThreadId) : null;
     return { 
-      threadId: Number.isFinite(tid as number) ? (tid as number) : null, 
+      threadId: Number.isFinite(tid as number) ? (tid as number) : null,
       token: storedToken,
       uuid: storedUuid
     };
@@ -82,6 +82,7 @@ export default function ChatPopupPage() {
   const [selectedThread, setSelectedThread] = useState<number | "">("");
   const [uuidValidation, setUuidValidation] = useState<{ valid: boolean; config?: any; loading: boolean }>({ valid: false, loading: false });
   const [uuidError, setUuidError] = useState<string>("");
+  const [autoThreadId, setAutoThreadId] = useState<number | null>(null);
 
   // UUID 검증
   useEffect(() => {
@@ -103,13 +104,24 @@ export default function ChatPopupPage() {
           if (validation.config?.channelId) {
             setSelectedChannelId(validation.config.channelId);
           }
+          console.log("UUID 검증 성공:", validation);
         } else {
           setUuidValidation({ valid: false, loading: false });
-          setUuidError("유효하지 않은 채널 UUID입니다.");
+          setUuidError("유효하지 않은 채널 UUID입니다. 삭제되었거나 존재하지 않는 채널일 수 있습니다.");
+          console.log("UUID 검증 실패:", validation);
         }
-      } catch (error) {
+      } catch (error: any) {
         setUuidValidation({ valid: false, loading: false });
-        setUuidError("UUID 검증 중 오류가 발생했습니다.");
+        console.error("UUID 검증 중 오류 발생:", error);
+        
+        // 500 에러인 경우 더 구체적인 메시지
+        if (error.response?.status === 500) {
+          setUuidError("서버 오류가 발생했습니다. 관리자에게 문의하세요.");
+        } else if (error.response?.status === 404) {
+          setUuidError("채널을 찾을 수 없습니다.");
+        } else {
+          setUuidError("UUID 검증 중 오류가 발생했습니다.");
+        }
       }
     })();
   }, [uuid]);
@@ -126,6 +138,33 @@ export default function ChatPopupPage() {
 
   useEffect(() => {
     if (!selectedChannelId) { setThreads([]); setSelectedThread(""); return; }
+    
+    // UUID가 유효한 경우 자동으로 새 스레드 생성하고 대화 시작
+    if (uuid && uuidValidation.valid && uuidValidation.config?.channelId) {
+      (async () => {
+        try {
+          // 사용자 식별자를 UUID로 사용하여 새 스레드 생성 또는 기존 스레드 가져오기
+          const thread = await chatApi.createOrGetThread({
+            channelId: uuidValidation.config.channelId,
+            userIdentifier: uuid,
+            userName: "사용자",
+            actor: "user"
+          });
+          
+          if (thread?.id) {
+            // 세션 스토리지에 저장하고 state로 스레드 ID 설정
+            sessionStorage.setItem('popup_threadId', thread.id.toString());
+            setAutoThreadId(thread.id);
+          }
+        } catch (error) {
+          console.error("스레드 생성 실패:", error);
+          setUuidError("대화방 생성에 실패했습니다.");
+        }
+      })();
+      return;
+    }
+    
+    // UUID가 없거나 유효하지 않은 경우의 기존 로직 (관리자용)
     (async () => {
       try {
         const list = await chatApi.getThreadsByChannel(Number(selectedChannelId));
@@ -134,76 +173,68 @@ export default function ChatPopupPage() {
         setThreads([]);
       }
     })();
-  }, [selectedChannelId]);
+  }, [selectedChannelId, uuid, uuidValidation.valid, uuidValidation.config]);
 
-  if (!threadId) {
-    return (
-      <Flex p={4} m={0} w="100vw" h="100vh" overflow="hidden" direction="column" align="center" justify="center" gap={4}>
-        <Text fontSize="lg" fontWeight="bold">대화 스레드를 선택하세요</Text>
-        
-        {/* UUID 검증 상태 표시 */}
-        {uuid && (
-          <Box p={3} borderWidth="1px" borderRadius="md" minW="320px" bg={uuidValidation.valid ? "green.50" : uuidValidation.loading ? "blue.50" : "red.50"}>
+  // autoThreadId가 설정된 경우 이를 사용
+  const finalThreadId = autoThreadId || threadId;
+
+  if (!finalThreadId) {
+    // UUID가 없는 경우 접근 차단
+    if (!uuid) {
+      return (
+        <Flex p={4} m={0} w="100vw" h="100vh" overflow="hidden" direction="column" align="center" justify="center" gap={4}>
+          <Text fontSize="lg" fontWeight="bold" color="red.500">접근이 제한되었습니다</Text>
+          <Text fontSize="md" color="gray.600">유효한 채널 UUID가 필요합니다.</Text>
+        </Flex>
+      );
+    }
+
+    // UUID 검증 중이거나 유효하지 않은 경우
+    if (uuidValidation.loading) {
+      return (
+        <Flex p={4} m={0} w="100vw" h="100vh" overflow="hidden" direction="column" align="center" justify="center" gap={4}>
+          <Text fontSize="lg" fontWeight="bold">연결 중...</Text>
+          <Box p={3} borderWidth="1px" borderRadius="md" minW="320px" bg="blue.50">
             <Text fontSize="sm" fontWeight="bold" mb={2}>
               채널 UUID: {uuid.substring(0, 8)}...
             </Text>
-            {uuidValidation.loading && (
-              <Text fontSize="xs" color="blue.600">UUID 검증 중...</Text>
-            )}
-            {uuidValidation.valid && uuidValidation.config && (
-              <Text fontSize="xs" color="green.600">
-                ✓ {uuidValidation.config.cmsName || uuidValidation.config.cmsCode} 채널에 연결됨
-              </Text>
-            )}
-            {uuidError && (
-              <Text fontSize="xs" color="red.600">✗ {uuidError}</Text>
-            )}
+            <Text fontSize="xs" color="blue.600">UUID 검증 중...</Text>
           </Box>
-        )}
-        
-        <Flex direction="column" gap={3} minW="320px">
-          <Box>
-            <Text fontSize="sm" mb={1}>채널</Text>
-            <Box as="select" onChange={(e: any) => setSelectedChannelId(e.target.value ? Number(e.target.value) : "")}
-              borderWidth="1px" borderColor="gray.200" rounded="md" px={3} py={2} w="100%" data-value={selectedChannelId as any}
-              _disabled={{ opacity: 0.6, cursor: "not-allowed" }}
-              isDisabled={uuid && uuidValidation.valid}>
-              <option value="">채널 선택</option>
-              {channels.map((ch) => (
-                <option key={ch.id} value={ch.id}>{ch.cmsName || ch.cmsCode}</option>
-              ))}
-            </Box>
-            {uuid && uuidValidation.valid && (
-              <Text fontSize="xs" color="gray.500" mt={1}>
-                UUID로 자동 선택됨
-              </Text>
-            )}
-          </Box>
-          <Box>
-            <Text fontSize="sm" mb={1}>스레드</Text>
-            <Box as="select" onChange={(e: any) => setSelectedThread(e.target.value ? Number(e.target.value) : "")}
-              borderWidth="1px" borderColor="gray.200" rounded="md" px={3} py={2} w="100%" data-value={selectedThread as any}
-              opacity={!selectedChannelId ? 0.6 : 1} pointerEvents={!selectedChannelId ? "none" : "auto"}>
-              <option value="">스레드 선택</option>
-              {threads.map((th) => (
-                <option key={th.id} value={th.id}>{th.userName || th.userIdentifier} (#{th.id})</option>
-              ))}
-            </Box>
-          </Box>
-          <Button colorScheme="blue" disabled={!selectedThread} onClick={() => {
-            if (!selectedThread) return;
-            const q = new URLSearchParams(searchParams.toString());
-            q.set("threadId", String(selectedThread));
-            router.replace(`?${q.toString()}`);
-          }}>대화 열기</Button>
         </Flex>
+      );
+    }
+
+    if (!uuidValidation.valid) {
+      return (
+        <Flex p={4} m={0} w="100vw" h="100vh" overflow="hidden" direction="column" align="center" justify="center" gap={4}>
+          <Text fontSize="lg" fontWeight="bold" color="red.500">접근이 제한되었습니다</Text>
+          <Box p={3} borderWidth="1px" borderRadius="md" minW="320px" bg="red.50">
+            <Text fontSize="sm" fontWeight="bold" mb={2}>
+              채널 UUID: {uuid.substring(0, 8)}...
+            </Text>
+            <Text fontSize="xs" color="red.600">✗ {uuidError || "유효하지 않은 채널 UUID입니다."}</Text>
+          </Box>
+        </Flex>
+      );
+    }
+
+    // UUID가 유효한 경우 - 스레드 생성 중
+    return (
+      <Flex p={4} m={0} w="100vw" h="100vh" overflow="hidden" direction="column" align="center" justify="center" gap={4}>
+        <Text fontSize="lg" fontWeight="bold">대화방 준비 중...</Text>
+        <Box p={3} borderWidth="1px" borderRadius="md" minW="320px" bg="green.50">
+          <Text fontSize="sm" fontWeight="bold" mb={2}>
+            채널: {uuidValidation.config?.cmsName || uuidValidation.config?.cmsCode}
+          </Text>
+          <Text fontSize="xs" color="green.600">✓ 연결됨</Text>
+        </Box>
       </Flex>
     );
   }
 
   return (
     <Box p={0} m={0} w="100vw" h="100vh" overflow="hidden">
-      <ConversationContainer selectedThreadId={threadId} compact uuid={uuid} />
+      <ConversationContainer selectedThreadId={finalThreadId} compact uuid={uuid} />
     </Box>
   );
 }

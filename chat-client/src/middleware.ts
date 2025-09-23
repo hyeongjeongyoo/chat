@@ -12,9 +12,9 @@ export function middleware(request: NextRequest) {
 
   // 로그인 페이지는 인증 체크를 하지 않음
   if (pathname === "/cms/login") {
-    // 토큰이 있는 상태에서 로그인 페이지 접근 시 메뉴 페이지로 리다이렉트
+    // 토큰이 있는 상태에서 로그인 페이지 접근 시 채팅 페이지로 리다이렉트
     if (token) {
-      return NextResponse.redirect(new URL("/cms/menu", request.url));
+      return NextResponse.redirect(new URL("/cms/chat", request.url));
     }
     return NextResponse.next();
   }

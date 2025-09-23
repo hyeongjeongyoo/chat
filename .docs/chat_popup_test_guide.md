@@ -30,18 +30,18 @@ npm run dev -- --port 3001
 
 ```bash
 # 1. 로그인
-curl -X POST "http://localhost:8081/api/v1/auth/login" \
+curl -X POST "http://localhost:8080/api/v1/auth/login" \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"gosel@0716!!"}'
 
 # 2. 토큰으로 메시지 조회 (토큰은 위에서 받은 accessToken 사용)
-curl -X GET "http://localhost:8081/api/v1/chat/threads/1/messages" \
+curl -X GET "http://localhost:8080/api/v1/chat/threads/1/messages" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
 #### 3-2. 브라우저 테스트
 
-1. **URL 접속**: `http://localhost:3001/chat-popup?threadId=1&userName=방문자&userType=USER`
+1. **URL 접속**: `http://localhost:3000/chat-popup?threadId=1&userName=방문자&userType=USER`
 2. **개발자 도구**: F12 → Network 탭에서 API 호출 확인
 3. **Console 확인**: 에러 메시지 체크
 

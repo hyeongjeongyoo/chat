@@ -43,15 +43,4 @@ public class ChannelConfigController {
         return ResponseEntity.ok(ApiResponseSchema.success(removed, "Channel config deleted"));
     }
 
-    @GetMapping("/validate/{uuid}")
-    public ResponseEntity<?> validateChannelUuid(@PathVariable String uuid) {
-        boolean isValid = channelConfigs.containsKey(uuid);
-        Map<String, Object> result = new HashMap<>();
-        result.put("valid", isValid);
-        result.put("uuid", uuid);
-        if (isValid) {
-            result.put("config", channelConfigs.get(uuid));
-        }
-        return ResponseEntity.ok(ApiResponseSchema.success(result, "ok"));
-    }
 }

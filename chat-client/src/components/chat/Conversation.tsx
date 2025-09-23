@@ -33,6 +33,8 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
   const isProgrammaticScrollRef = useRef(false);
   const pendingRestoreRef = useRef<number | null>(null);
   const autoScrollRef = useRef(true);
+  const [showNewMessageAlert, setShowNewMessageAlert] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const queryClient = useQueryClient();
 
   // 파일 선택
@@ -173,13 +175,41 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
     },
   });
 
-  const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
     const el = listRef.current;
     if (!el) return;
     isProgrammaticScrollRef.current = true;
-    el.scrollTop = el.scrollHeight;
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior
+    });
     // allow event to settle
-    setTimeout(() => { isProgrammaticScrollRef.current = false; }, 0);
+    setTimeout(() => { 
+      isProgrammaticScrollRef.current = false; 
+      setShowNewMessageAlert(false);
+      setUnreadCount(0);
+    }, 100);
+  };
+
+  // 사용자가 하단 근처에 있는지 확인
+  const isNearBottom = () => {
+    const el = listRef.current;
+    if (!el) return true;
+    const threshold = 100; // 하단 100px 이내
+    return el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+  };
+
+  // 스크롤 이벤트 핸들러
+  const handleScroll = () => {
+    if (isProgrammaticScrollRef.current) return;
+    
+    const nearBottom = isNearBottom();
+    autoScrollRef.current = nearBottom;
+    
+    if (nearBottom && showNewMessageAlert) {
+      setShowNewMessageAlert(false);
+      setUnreadCount(0);
+    }
   };
 
   // 초기 로딩 시 마지막 페이지 하단으로 스냅
@@ -194,10 +224,18 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
     }
   }, [isLoading, messages.length]);
 
-  // 새 메시지 도착 시 하단 근처이면 자동 하단 고정
+  // 새 메시지 도착 시 처리
   useEffect(() => {
+    const latestMessage = messages[messages.length - 1];
+    if (!latestMessage) return;
+
     if (autoScrollRef.current) {
-      scrollToBottom("auto");
+      // 하단 근처에 있으면 부드럽게 스크롤
+      scrollToBottom("smooth");
+    } else {
+      // 위쪽에 있으면 새 메시지 알림 표시
+      setShowNewMessageAlert(true);
+      setUnreadCount(prev => prev + 1);
     }
   }, [messages[messages.length - 1]?.id]);
 
@@ -234,7 +272,7 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
         threadId: message.threadId,
         content: message.content,
         senderType: message.senderType,
-        uuid: uuid, // UUID 정보 포함
+        uuid: uuid || undefined, // UUID 정보 포함
       });
       return true;
     } catch (e) {
@@ -254,6 +292,9 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
     };
     await sendViaPreferredChannel(message);
     setMessageInput("");
+    
+    // 사용자가 메시지를 보낼 때는 항상 하단으로 스크롤
+    setTimeout(() => scrollToBottom("smooth"), 50);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -299,6 +340,7 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
     if (!didInitScrollRef.current) return; // 초기 강제 스크롤 중 무한 스크롤 금지
 
     if (scrollTop <= 80 && hasNextPage) {
+      console.log("🔍 [Conversation] Triggering fetchNextPage - scrollTop:", scrollTop, "hasNextPage:", hasNextPage);
       // 현재 바닥으로부터의 오프셋 저장
       pendingRestoreRef.current = scrollHeight - scrollTop;
       fetchNextPage();
@@ -462,7 +504,7 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
         </Box>
       )}
 
-      <Flex ref={listRef} onScroll={onScroll} direction="column" flex="1" minH={0} p={compact ? 2 : 4} overflowY="auto" gap={compact ? 1 : 4}>
+      <Flex ref={listRef} onScroll={handleScroll} direction="column" flex="1" minH={0} p={compact ? 2 : 4} overflowY="auto" gap={compact ? 1 : 4} position="relative">
         {bizOpen === false && (
           <Box bg="yellow.50" borderWidth="1px" borderColor="yellow.200" color="yellow.900" p={2} rounded="md">
             {bizMsg || "현재 운영시간이 아닙니다. 접수되며, 운영시간에 답변드립니다."}
@@ -563,8 +605,8 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
                       maxH="220px"
                       objectFit="contain"
                       rounded="md"
-                      cursor="pointer"
-                      onClick={() => {
+                      cursor={compact ? "default" : "pointer"}
+                      onClick={compact ? undefined : () => {
                         setSelectedImage({
                           src: String(imageSrc || ''),
                           alt: String((message as any).fileName || "image")
@@ -706,6 +748,51 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
             );
           })
         )}
+        
+        {/* 새 메시지 알림 */}
+        {showNewMessageAlert && (
+          <Box
+            position="fixed"
+            bottom="80px"
+            left="50%"
+            transform="translateX(-50%)"
+            bg="gray.300"
+            color="white"
+            px={10}
+            py={2}
+            borderRadius="full"
+            boxShadow="lg"
+            cursor="pointer"
+            onClick={() => scrollToBottom("smooth")}
+            zIndex="10"
+            display="flex"
+            alignItems="center"
+            gap={2}
+            fontSize="sm"
+            fontWeight="medium"
+            transition="all 0.2s"
+            _hover={{ bg: "gray.400", transform: "translateX(-50%) scale(1.05)" }}
+          >
+            {unreadCount > 0 && (
+              <Box
+                bg="red.500"
+                color="white"
+                borderRadius="full"
+                minW="20px"
+                h="20px"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                fontSize="xs"
+                fontWeight="bold"
+              >
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </Box>
+            )}
+            새 메시지 ↓
+          </Box>
+        )}
+        
         <div ref={messagesEndRef} />
       </Flex>
 
@@ -768,47 +855,49 @@ export const Conversation = ({ selectedThreadId, compact, uuid }: ConversationPr
         cancelText="취소"
       />
 
-      {/* 이미지 미리보기 Drawer */}
-      <Drawer.Root open={isImageModalOpen} onOpenChange={(e) => { if (!e.open) setIsImageModalOpen(false); }} size="md">
-        <Portal>
-          <Drawer.Backdrop />
-          <Drawer.Positioner>
-            <Drawer.Content>
-              {/* 좌측 상단 닫기 트리거 (>> 버튼) */}
-              <Drawer.CloseTrigger asChild>
-                <Button
-                  position="absolute"
-                  top={4}
-                  left={4}
-                  size="xs"
-                  variant="subtle"
-                >
-                  {">>"}
-                </Button>
-              </Drawer.CloseTrigger>
-              <Drawer.Header>
-                <Text fontWeight="bold" fontSize="md" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
-                  {selectedImage?.alt}
-                </Text>
-              </Drawer.Header>
-              <Drawer.Body>
-                {selectedImage && (
-                  <Box display="flex" justifyContent="center" alignItems="center" minH="400px">
-                    <Image
-                      src={selectedImage.src}
-                      alt={selectedImage.alt}
-                      maxW="100%"
-                      maxH="80vh"
-                      objectFit="contain"
-                      borderRadius="md"
-                    />
-                  </Box>
-                )}
-              </Drawer.Body>
-            </Drawer.Content>
-          </Drawer.Positioner>
-        </Portal>
-      </Drawer.Root>
+      {/* 이미지 미리보기 Drawer - compact 모드에서는 표시하지 않음 */}
+      {!compact && (
+        <Drawer.Root open={isImageModalOpen} onOpenChange={(e) => { if (!e.open) setIsImageModalOpen(false); }} size="md">
+          <Portal>
+            <Drawer.Backdrop />
+            <Drawer.Positioner>
+              <Drawer.Content>
+                {/* 좌측 상단 닫기 트리거 (>> 버튼) */}
+                <Drawer.CloseTrigger asChild>
+                  <Button
+                    position="absolute"
+                    top={4}
+                    left={4}
+                    size="xs"
+                    variant="subtle"
+                  >
+                    {">>"}
+                  </Button>
+                </Drawer.CloseTrigger>
+                <Drawer.Header>
+                  <Text fontWeight="bold" fontSize="md" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                    {selectedImage?.alt}
+                  </Text>
+                </Drawer.Header>
+                <Drawer.Body>
+                  {selectedImage && (
+                    <Box display="flex" justifyContent="center" alignItems="center" minH="400px">
+                      <Image
+                        src={selectedImage.src}
+                        alt={selectedImage.alt}
+                        maxW="100%"
+                        maxH="80vh"
+                        objectFit="contain"
+                        borderRadius="md"
+                      />
+                    </Box>
+                  )}
+                </Drawer.Body>
+              </Drawer.Content>
+            </Drawer.Positioner>
+          </Portal>
+        </Drawer.Root>
+      )}
     </Flex>
   );
 };

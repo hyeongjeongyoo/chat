@@ -3,7 +3,6 @@
 import { Box, Text, Flex, Badge, Stack } from "@chakra-ui/react";
 import { Avatar } from "@/components/ui/avatar";
 import { useChatThreads } from "@/hooks/useChat";
-import { ChatThreadDto } from "@/types/api/chat";
 
 interface ChatRoomListProps {
   selectedChannelId: number | null;
@@ -20,11 +19,7 @@ export const ChatRoomList = ({
     data: threads,
     isLoading,
     error,
-  } = useChatThreads(selectedChannelId || undefined) as {
-    data: ChatThreadDto[] | undefined;
-    isLoading: boolean;
-    error: unknown;
-  };
+  } = useChatThreads(selectedChannelId || undefined);
 
   if (!selectedChannelId) {
     return (
@@ -62,12 +57,12 @@ export const ChatRoomList = ({
     <Stack direction="column" p={2}>
       {threads.map((thread) => (
         <Box
-          key={thread.threadId}
-          onClick={() => onSelectThread(thread.threadId)}
+          key={thread.id}
+          onClick={() => onSelectThread(thread.id)}
           cursor="pointer"
           p={3}
           borderRadius="md"
-          bg={selectedThreadId === thread.threadId ? "blue.50" : "transparent"}
+          bg={selectedThreadId === thread.id ? "blue.50" : "transparent"}
           _hover={{ bg: "gray.50" }}
           transition="all 0.2s"
         >
@@ -81,15 +76,7 @@ export const ChatRoomList = ({
               <Flex justify="space-between" align="baseline">
                 <Text fontWeight="medium">{thread.userName}</Text>
                 <Text fontSize="xs" color="gray.500">
-                  {thread.lastMessageTimestamp
-                    ? new Date(thread.lastMessageTimestamp).toLocaleTimeString(
-                        [],
-                        {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        }
-                      )
-                    : ""}
+                  {thread.userIdentifier}
                 </Text>
               </Flex>
               <Flex justify="space-between" align="center" mt={1}>
@@ -101,9 +88,9 @@ export const ChatRoomList = ({
                   whiteSpace="nowrap"
                   maxW="70%"
                 >
-                  {thread.lastMessage}
+                  {thread.userName || thread.userIdentifier}
                 </Text>
-                {thread.unreadCount > 0 && (
+                {(thread.unreadCount || 0) > 0 && (
                   <Badge colorScheme="red" borderRadius="full" ml={2}>
                     {thread.unreadCount}
                   </Badge>

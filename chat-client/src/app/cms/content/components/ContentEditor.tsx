@@ -240,12 +240,10 @@ export function ContentEditor({
             "CONTENT",
             menuId
           );
-          if (uploadResponse.success && uploadResponse.data.length > 0) {
-            return uploadResponse.data[0].fileId;
+          if (uploadResponse.length > 0) {
+            return uploadResponse[0].fileId;
           }
-          throw new Error(
-            uploadResponse.message || "파일 업로드에 실패했습니다."
-          );
+          throw new Error("파일 업로드에 실패했습니다.");
         })
       );
 

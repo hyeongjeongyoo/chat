@@ -2,7 +2,6 @@
 
 import { Box, Stack, Text, Flex, Badge } from "@chakra-ui/react";
 import { useChatChannels } from "@/hooks/useChat";
-import { ChatChannelDto } from "@/types/api/chat";
 
 interface ChannelListProps {
   selectedChannelId: number | null;
@@ -17,11 +16,7 @@ export const ChannelList = ({
     data: channels,
     isLoading,
     error,
-  } = useChatChannels() as {
-    data: ChatChannelDto[] | undefined;
-    isLoading: boolean;
-    error: unknown;
-  };
+  } = useChatChannels();
 
   if (isLoading) {
     return (
@@ -51,13 +46,13 @@ export const ChannelList = ({
     <Stack gap={1} p={2}>
       {channels.map((channel) => (
         <Box
-          key={channel.channelId}
-          onClick={() => onSelectChannel(channel.channelId)}
+          key={channel.id}
+          onClick={() => onSelectChannel(channel.id)}
           cursor="pointer"
           p={3}
           borderRadius="md"
           bg={
-            selectedChannelId === channel.channelId ? "blue.50" : "transparent"
+            selectedChannelId === channel.id ? "blue.50" : "transparent"
           }
           _hover={{ bg: "gray.50" }}
           transition="all 0.2s"
@@ -69,7 +64,7 @@ export const ChannelList = ({
                 {channel.cmsCode}
               </Text>
             </Box>
-            {channel.unreadCount > 0 && (
+            {(channel.unreadCount || 0) > 0 && (
               <Badge colorScheme="red" borderRadius="full" px={2}>
                 {channel.unreadCount}
               </Badge>

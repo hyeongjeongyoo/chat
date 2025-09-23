@@ -4,3 +4,4 @@ ADD COLUMN last_read_at TIMESTAMP NULL AFTER updated_at;
 
 -- 인덱스 추가
 CREATE INDEX idx_chat_thread_last_read_at ON chat_thread (last_read_at);
+
