@@ -21,7 +21,7 @@ ENVIRONMENT_NAME=local
 CORS_ENABLED=true
 
 # Database Configuration
-SPRING_DATASOURCE_URL=jdbc:mariadb://172.30.1.11:3306/arpina_dev?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useProxy=false&useLegacyDatetimeCode=false
+SPRING_DATASOURCE_URL=jdbc:mariadb://172.30.1.10:3306/cs_manager?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useProxy=false&useLegacyDatetimeCode=false
 SPRING_DATASOURCE_USERNAME=local_username
 SPRING_DATASOURCE_PASSWORD=local_password
 SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.mariadb.jdbc.Driver
@@ -91,7 +91,7 @@ NICE_CHECKPLUS_SITE_PASSWORD=your_site_password
 NICE_CHECKPLUS_FRONTEND_REDIRECT_PATH=your_redirect_path
 
 # CORS Configuration (로컬 개발용)
-GLOBALS_ALLOW_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8081
+GLOBALS_ALLOW_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080
 
 # Global Configuration (로컬)
 GLOBALS_LOCAL_IP=http://localhost
@@ -129,7 +129,7 @@ ENVIRONMENT_NAME=dev
 CORS_ENABLED=true
 
 # Database Configuration
-SPRING_DATASOURCE_URL=jdbc:mariadb://172.30.1.11:3306/arpina_dev?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useProxy=false&useLegacyDatetimeCode=false
+SPRING_DATASOURCE_URL=jdbc:mariadb://172.30.1.10:3306/cs_manager?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useProxy=false&useLegacyDatetimeCode=false
 SPRING_DATASOURCE_USERNAME=dev_username
 SPRING_DATASOURCE_PASSWORD=dev_password
 SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.mariadb.jdbc.Driver

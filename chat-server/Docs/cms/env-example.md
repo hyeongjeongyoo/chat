@@ -27,7 +27,7 @@ CORS_ENABLED=true
 # =================================
 # Database Configuration
 # =================================
-SPRING_DATASOURCE_URL=jdbc:mariadb://172.30.1.11:3306/arpina_dev?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useProxy=false&useLegacyDatetimeCode=false
+SPRING_DATASOURCE_URL=jdbc:mariadb://172.30.1.10:3306/cs_manager?useSSL=false&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true&useProxy=false&useLegacyDatetimeCode=false
 SPRING_DATASOURCE_USERNAME=your_db_username
 SPRING_DATASOURCE_PASSWORD=your_db_password
 SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.mariadb.jdbc.Driver
@@ -115,7 +115,7 @@ NICE_CHECKPLUS_FRONTEND_REDIRECT_PATH=your_redirect_path
 # =================================
 # CORS Configuration
 # =================================
-GLOBALS_ALLOW_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8081
+GLOBALS_ALLOW_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080
 
 # =================================
 # Global Configuration
