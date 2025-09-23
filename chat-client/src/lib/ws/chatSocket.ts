@@ -138,6 +138,3 @@ export class ChatStompClient {
     return true;
   }
 }
-
-
-
