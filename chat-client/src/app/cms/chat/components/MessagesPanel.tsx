@@ -113,12 +113,12 @@ export function MessagesPanel({
     (async () => {
       try {
         const data = await chatApi.businessHoursStatus();
-        // 테스트를 위해 임시로 false로 설정
-        setBizOpen(false); // !!data.open
-        setBizMsg(String(data.message || "현재 운영시간(평일 09:00~18:00)이 아닙니다. \n접수되었으며 운영시간에 답변드리겠습니다."));
+        setBizOpen(!!data.open);
+        setBizMsg(String(data.message || "현재 운영시간(평일 09:00~18:00)이 아닙니다.\n접수되었으며 운영시간에 답변드리겠습니다."));
+        console.log('💼 운영시간 상태:', { open: data.open, bizOpen: !!data.open, message: data.message });
       } catch {
-        setBizOpen(false); // 에러 시에도 false로 설정하여 테스트
-        setBizMsg("현재 운영시간(평일 09:00~18:00)이 아닙니다. \n접수되었으며 운영시간에 답변드리겠습니다.");
+        setBizOpen(null);
+        setBizMsg("");
       }
     })();
   }, []);
@@ -134,6 +134,14 @@ export function MessagesPanel({
     if (!latestMessage || !latestMessage.id || latestMessage.localDraft) return;
     
     // 운영시간 외이고 상대방(USER가 아닌)이 보낸 메시지인 경우 자동 응답
+    console.log('🔍 자동응답 조건 확인:', {
+      bizOpen,
+      bizMsg: !!bizMsg,
+      sender: latestMessage.sender,
+      isAlreadyReplied: autoRepliedMessagesRef.current.has(latestMessage.id),
+      shouldAutoReply: bizOpen === false && bizMsg && latestMessage.sender !== "ADMIN" && !autoRepliedMessagesRef.current.has(latestMessage.id)
+    });
+    
     if (bizOpen === false && bizMsg && 
         latestMessage.sender !== "ADMIN" && 
         !autoRepliedMessagesRef.current.has(latestMessage.id)) {
